@@ -89,11 +89,13 @@ API Key 使用 Fernet 加密，不会通过读取接口返回。首次启动自�
 
 以下命令在项目根目录执行一次即可。`environment.yml` 会创建独立 Python 环境并安装后端运行、测试依赖，Conda base 环境只用于管理环境。
 
-Windows 下将环境放到 D 盘（路径可自行更换）：
+将环境放在项目根目录的 `.conda/` 中，使用相对路径，不依赖固定盘符。该目录已被 Git 忽略：
 
 ```powershell
-conda env create --prefix D:/Programs/miniforge/envs/myflow --file environment.yml
+conda env create --prefix ./.conda --file environment.yml
 ```
+
+已有按环境名创建的 `myflow` 环境，可继续用 `conda activate myflow` 激活；使用下面的相对路径启动方式前，需要先创建一次项目内的 `.conda/` 环境。
 
 安装前端工具及锁定依赖：
 
@@ -114,7 +116,7 @@ pnpm install --frozen-lockfile
 终端一，从项目根目录激活环境并启动后端：
 
 ```powershell
-conda activate D:/Programs/miniforge/envs/myflow
+conda activate ./.conda
 cd backend
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
@@ -131,7 +133,7 @@ pnpm dev
 若 PowerShell 尚未初始化 Conda，可在 `backend/` 中直接启动，无需修改 PowerShell 配置：
 
 ```powershell
-conda run --no-capture-output --prefix D:/Programs/miniforge/envs/myflow python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+conda run --no-capture-output --prefix ../.conda python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 前端将 `/api` 和 `/artifacts` 代理到 `http://127.0.0.1:8000`，无需配置 CORS。若改变后端地址，在启动前端前设置 `BACKEND_URL`；生产构建需在 `pnpm build` 前设置。
@@ -155,7 +157,7 @@ conda run --no-capture-output --prefix D:/Programs/miniforge/envs/myflow python 
 后端依赖变化时，在项目根目录更新已有环境；前端依赖变化时，在 `frontend/` 中重新运行 `pnpm install --frozen-lockfile`：
 
 ```powershell
-conda env update --prefix D:/Programs/miniforge/envs/myflow --file environment.yml
+conda env update --prefix ./.conda --file environment.yml
 ```
 
 ```sh

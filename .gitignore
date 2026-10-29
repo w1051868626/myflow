@@ -5,6 +5,7 @@
 !.env.*.example
 
 # Python dependencies and caches
+/.conda/
 .venv/
 venv/
 __pycache__/
