@@ -1,0 +1,56 @@
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python dependencies and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+
+# Frontend dependencies and build output
+node_modules/
+.next/
+out/
+dist/
+build/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+.turbo/
+.vercel/
+
+# Runtime data and generated artifacts
+/data/
+/backend/data/
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# Local editor and operating system files
+.atomcode/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
