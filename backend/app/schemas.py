@@ -5,7 +5,7 @@ from pydantic import BaseModel, Field
 
 class Node(BaseModel):
     id: str = Field(pattern=r"^[a-zA-Z][a-zA-Z0-9_]*$", max_length=64)
-    type: Literal["start", "llm", "image", "speech", "music", "video", "asr", "template", "end"]
+    type: Literal["text", "start", "llm", "image", "speech", "music", "video", "asr", "template", "end"]
     position: dict[str, float] = Field(default_factory=lambda: {"x": 0, "y": 0})
     data: dict[str, Any] = Field(default_factory=dict)
 

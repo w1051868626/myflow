@@ -28,6 +28,8 @@ import {
   api,
   nodeKinds,
   outputFields,
+  legacyInputFields,
+  nodeDefaults,
   type Graph,
   type Kind,
   type Model,
@@ -46,8 +48,7 @@ import type { GraphUpdate } from "./history";
 const kinds = nodeKinds;
 const blank: Graph = {
   nodes: [
-    { id: "start", type: "start", position: { x: 0, y: 80 }, data: { label: "创作主题", fields: "topic" } },
-    { id: "end", type: "end", position: { x: 620, y: 80 }, data: { label: "创作完成" } },
+    { id: "text", type: "text", position: { x: 0, y: 80 }, data: { label: "输入文本", text: "一杯咖啡里的慢生活" } },
   ],
   edges: [],
 };
@@ -127,11 +128,7 @@ export default function Editor() {
   const locked = busy || run?.status === "running" || replaying;
   const viewedGraph = replaying && run ? run.graph : graph;
   const picked = viewedGraph.nodes.find((n) => n.id === selected);
-  const start = graph.nodes.find((n) => n.type === "start");
-  const fields = (start?.data.fields || "topic")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const fields = legacyInputFields(graph);
 
   const loadHistory = useCallback(async (id: string) => {
     setHistory(await api<Run[]>("/workflows/runs/list", { id }));
@@ -338,6 +335,10 @@ export default function Editor() {
       setBusy(false);
     }
   }
+  function runClick(): void {
+    if (fields.length) setShowInputs(true);
+    else void execute();
+  }
   async function stop() {
     try {
       if (run) await api("/runs/cancel", { id: run.id });
@@ -364,12 +365,8 @@ export default function Editor() {
 
   function add(kind: Kind, position?: { x: number; y: number }) {
     if (!registry || locked || !workflow) return;
-    if ((kind === "start" || kind === "end") && graph.nodes.some((n) => n.type === kind)) {
-      setMessage(`只能有一个${titles[kind]}节点`);
-      return;
-    }
     const id = `${kind}_${crypto.randomUUID().slice(0, 8)}`;
-    const data = Object.fromEntries(Object.entries(registry[kind].properties).map(([key, p]) => [key, p.default]));
+    const data = nodeDefaults(kind, registry, graph);
     edit({
       ...graph,
       nodes: [
@@ -527,7 +524,7 @@ export default function Editor() {
               <Save size={15} />
               保存
             </button>
-            <button className="button primary" disabled={locked || !workflow} onClick={() => setShowInputs(true)}>
+            <button className="button primary" disabled={locked || !workflow} onClick={runClick}>
               <Play size={14} fill="currentColor" />
               运行
             </button>
@@ -714,7 +711,9 @@ export default function Editor() {
                                 <option key={v}>{v}</option>
                               ))}
                             </select>
-                          ) : property.format === "textarea" || property.format?.endsWith("-file") ? (
+                          ) : property.format === "textarea" ||
+                            property.format === "plain-text" ||
+                            property.format?.endsWith("-file") ? (
                             <>
                               <textarea
                                 ref={(element) => {
@@ -725,16 +724,21 @@ export default function Editor() {
                                 rows={property.format?.endsWith("-file") ? 2 : key === "system" ? 3 : 6}
                                 onChange={(e) => {
                                   updateData(key, e.target.value);
-                                  if (e.target.value.slice(0, e.target.selectionStart).endsWith("{"))
+                                  if (
+                                    property.format !== "plain-text" &&
+                                    e.target.value.slice(0, e.target.selectionStart).endsWith("{")
+                                  )
                                     setReferenceField(key);
                                 }}
                               />
-                              <button
-                                className="reference-trigger"
-                                onClick={() => setReferenceField(referenceField === key ? undefined : key)}
-                              >
-                                ＋ 插入上游变量
-                              </button>
+                              {property.format !== "plain-text" && (
+                                <button
+                                  className="reference-trigger"
+                                  onClick={() => setReferenceField(referenceField === key ? undefined : key)}
+                                >
+                                  ＋ 插入上游变量
+                                </button>
+                              )}
                               {property.format?.endsWith("-file") && (
                                 <div className="resource-upload">
                                   <input
@@ -752,7 +756,7 @@ export default function Editor() {
                                   <small className="muted">上传文件或插入上游 .url 变量，最大 20 MB</small>
                                 </div>
                               )}
-                              {referenceField === key && (
+                              {property.format !== "plain-text" && referenceField === key && (
                                 <div className="reference-list">
                                   {variables.length ? (
                                     variables.map((v) => (
@@ -779,8 +783,15 @@ export default function Editor() {
                     {picked.type === "start" && (
                       <div className="tip">用逗号分隔字段名，例如 topic,style。字段名以英文字母开头。</div>
                     )}
+                    {picked.type === "text" && (
+                      <div className="tip">
+                        直接填写内容，连接下游后引用 {`{{${picked.id}.output}}`}。无需调用模型，也无需运行前填写输入。
+                      </div>
+                    )}
                     {picked.type === "end" && (
-                      <div className="tip">自动收集直接上游的文字、图片、音频和视频，作为工作流的最终输出。</div>
+                      <div className="tip">
+                        旧版汇总节点：收集直接上游结果。新工作流无需添加输出节点，所有末端会自动输出。
+                      </div>
                     )}
                     {results[picked.id] && (
                       <div className="node-detail">
@@ -914,7 +925,7 @@ export default function Editor() {
                         <span className={`status-pill ${item.status}`}>{statusNames[item.status] || item.status}</span>
                         <span className="muted small">v{item.workflow_version}</span>
                       </div>
-                      <strong>{Object.values(item.inputs).join(" · ").slice(0, 50)}</strong>
+                      <strong>{Object.values(item.inputs).join(" · ").slice(0, 50) || "节点直接输入"}</strong>
                       <span className="muted small">{new Date(item.created_at).toLocaleString("zh-CN")}</span>
                     </button>
                   ))}

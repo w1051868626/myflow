@@ -12,8 +12,8 @@ from sqlalchemy import select, update
 from app.artifacts import upload
 
 from app.engine.executor import TASKS, launch
-from app.engine.graph import input_fields, validate_graph
-from app.examples import example_graph
+from app.engine.graph import run_input_snapshot, validate_graph
+from app.examples import text_example_graph
 from app.models import Base, DATA_DIR, Event, Run, Session, Workflow, emit, engine, now, run_dict
 from app.nodes.registry import NODE_REGISTRY
 from app.providers.client import catalog, cipher, provider_setting, save_provider
@@ -31,7 +31,7 @@ async def lifespan(app):
             run.status, run.error, run.finished_at = "interrupted", "服务重启导致运行中断，请重新运行", now()
             db.add(Event(run_id=run.id, type="run_finished", data={"status": run.status, "error": run.error, "outputs": {}}))
         if not db.scalar(select(Workflow.id).limit(1)):
-            db.add(Workflow(id=uuid4().hex, name="从灵感到图文", graph=example_graph()))
+            db.add(Workflow(id=uuid4().hex, name="从灵感到图文", graph=text_example_graph()))
     yield
     tasks = list(TASKS.values())
     for task in tasks:
@@ -171,10 +171,11 @@ async def start(body: WorkflowRun):
         workflow = get_workflow(db, id)
         graph = Graph.model_validate(workflow.graph)
         validate_graph(graph)
-        fields = input_fields(next(n for n in graph.nodes if n.type == "start"))
-        if set(fields) != set(body.inputs) or any(not body.inputs[key].strip() for key in fields):
-            raise ValueError(f"请填写所有输入字段：{', '.join(fields)}")
-        run = Run(id=uuid4().hex, workflow_id=id, workflow_version=workflow.version, graph=workflow.graph, inputs=body.inputs)
+        snapshot = run_input_snapshot(graph, body.inputs)
+        run = Run(
+            id=uuid4().hex, workflow_id=id, workflow_version=workflow.version,
+            graph=workflow.graph, inputs=snapshot,
+        )
         db.add(run)
         db.flush()
         result = run_dict(run)

@@ -2,6 +2,30 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyNodeChanges } from "@xyflow/react";
 import { reconcileNodes, withCanvasPositions } from "./state.ts";
+import { legacyInputFields, nodeDefaults, nodeKinds, outputFields } from "../api/client.ts";
+
+test("INPUT-001 text inputs need no run fields and new node library omits legacy start/end", () => {
+  const graph = { nodes: [{ id: "source", type: "text", data: { text: "hello" } }], edges: [] };
+  assert.deepEqual(legacyInputFields(graph), []);
+  assert.deepEqual(outputFields(graph.nodes[0]), ["output"]);
+  assert.ok(nodeKinds.includes("text"));
+  assert.ok(!nodeKinds.includes("start") && !nodeKinds.includes("end"));
+});
+
+test("INPUT-001 legacy fields remain available and node defaults refer to the actual text source", () => {
+  const graph = {
+    nodes: [
+      { id: "source", type: "text", data: { text: "hello" } },
+      { id: "a", type: "start", data: { fields: "topic,style" } },
+      { id: "b", type: "start", data: { fields: "style,voice" } },
+    ],
+    edges: [],
+  };
+  assert.deepEqual(legacyInputFields(graph), ["topic", "style", "voice"]);
+  const registry = { llm: { properties: { prompt: { default: "为 {{start.topic}} 写文案" } } } };
+  assert.deepEqual(nodeDefaults("llm", registry, graph), { prompt: "为 {{source.output}} 写文案" });
+  assert.equal(registry.llm.properties.prompt.default, "为 {{start.topic}} 写文案");
+});
 
 const graph = {
   nodes: [

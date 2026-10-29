@@ -1,3 +1,25 @@
+from pydantic import JsonValue
+
+
+def text_example_graph(*, demo: bool = False) -> dict[str, JsonValue]:
+    # Keep the original example factory for compatibility fixtures and old graphs.
+    graph = example_graph(demo=demo)
+    graph["nodes"][0] = {
+        "id": "text", "type": "text", "position": {"x": 0, "y": 120},
+        "data": {"label": "创作主题", "text": "一杯咖啡里的慢生活"},
+    }
+    graph["nodes"] = [node for node in graph["nodes"] if node["type"] != "end"]
+    for node in graph["nodes"]:
+        node["data"] = {
+            key: value.replace("{{start.topic}}", "{{text.output}}") for key, value in node["data"].items()
+        }
+    graph["edges"] = [
+        {**edge, "source": "text" if edge["source"] == "start" else edge["source"]}
+        for edge in graph["edges"] if edge["target"] != "end"
+    ]
+    return graph
+
+
 def example_graph(*, demo=False):
     def node(id, type, x, y, data):
         return {"id": id, "type": type, "position": {"x": x, "y": y}, "data": data}

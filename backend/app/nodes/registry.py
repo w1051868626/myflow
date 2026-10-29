@@ -6,6 +6,10 @@ def field(title, default="", **extra):
 
 
 NODE_REGISTRY: dict[str, dict[str, Any]] = {
+    "text": {"title": "文本输入", "description": "直接填写原文，连接到下游后引用 .output，无需调用模型",
+             "output_type": "text", "properties": {
+        "text": field("文本内容", "一杯咖啡里的慢生活", format="plain-text"),
+    }},
     "start": {"title": "开始", "description": "定义这次创作的输入", "output_type": "text", "properties": {
         "fields": field("输入字段（逗号分隔）", "topic"),
     }},

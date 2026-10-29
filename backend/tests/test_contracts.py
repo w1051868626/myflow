@@ -81,7 +81,7 @@ def test_graph_001_incomplete_draft_is_saved_but_cannot_run(client):
 
 @pytest.mark.parametrize('defect', [
     'duplicate_edge', 'self_edge', 'missing_source', 'missing_target', 'incoming_start',
-    'outgoing_end', 'missing_start', 'extra_end', 'orphan', 'invalid_fields',
+    'outgoing_end', 'missing_start', 'invalid_fields',
 ])
 def test_graph_001_invalid_draft_never_creates_a_run(client, defect):
     graph = example_graph(demo=True)
@@ -96,16 +96,26 @@ def test_graph_001_invalid_draft_never_creates_a_run(client, defect):
         graph['edges'].append({'id': 'invalid', 'source': source, 'target': target})
     elif defect == 'missing_start':
         graph['nodes'] = [node for node in graph['nodes'] if node['type'] != 'start']
-    elif defect == 'extra_end':
-        graph['nodes'].append({'id': 'extra', 'type': 'end'})
-    elif defect == 'orphan':
-        graph['nodes'].append({'id': 'orphan', 'type': 'template'})
     else:
         graph['nodes'][0]['data']['fields'] = 'topic,topic'
     workflow = create(client, graph)
     response = client.post('/api/workflows/runs', json={'id': workflow['id'], 'inputs': {'topic': 'x'}})
     assert response.status_code == 422
     assert client.post('/api/workflows/runs/list', json={'id': workflow['id']}).json() == []
+
+
+@pytest.mark.parametrize('extra_type', ['end', 'template'])
+def test_graph_001_additional_terminals_are_valid(client: TestClient, extra_type: str) -> None:
+    graph = example_graph(demo=True)
+    graph['nodes'].append({'id': 'extra', 'type': extra_type, 'data': {}})
+    workflow = create(client, graph)
+    response = client.post('/api/workflows/runs', json={'id': workflow['id'], 'inputs': {'topic': 'x'}})
+    assert response.status_code == 201, response.text
+    finish(client, response.json()['id'])
+    run = client.post('/api/runs/get', json={'id': response.json()['id']}).json()
+    assert run['status'] == 'succeeded', run['error']
+    expected = {'image', 'template', 'extra'} if extra_type == 'template' else {'image', 'template'}
+    assert set(run['outputs']) == expected
 
 
 @pytest.mark.parametrize('resource,count', [('nodes', 101), ('edges', 501)])

@@ -4,6 +4,7 @@ import json
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.engine.executor import execute
@@ -104,7 +105,6 @@ def test_optimistic_save_and_snapshot(client):
 
 @pytest.mark.parametrize("mutation", [
     lambda g: g["edges"].append({"id": "cycle", "source": "template", "target": "llm"}),
-    lambda g: g["edges"].pop(),
     lambda g: g["nodes"][1]["data"].update(prompt="{{image.output}}"),
     lambda g: g["nodes"][1]["data"].update(prompt="{{start.unknown}}"),
     lambda g: g["nodes"].append(copy.deepcopy(g["nodes"][0])),
@@ -117,6 +117,19 @@ def test_rejects_invalid_graphs(client, mutation):
     mutation(graph)
     with pytest.raises(ValueError):
         validate_graph(Graph.model_validate(graph))
+
+
+def test_terminal_branch_does_not_require_end_connection(client: TestClient) -> None:
+    graph = example_graph(demo=True)
+    graph['edges'].pop()  # A former invalid branch is now an automatic terminal output.
+    w = workflow(client, graph)
+    response = client.post('/api/workflows/runs', json={'id': w['id'], 'inputs': {'topic': '独立末端'}})
+    assert response.status_code == 201, response.text
+    events(client, response.json()['id'])
+    run = client.post('/api/runs/get', json={'id': response.json()['id']}).json()
+    assert run['status'] == 'succeeded', run['error']
+    assert set(run['outputs']) == {'image', 'template'}
+    assert '独立末端' in run['outputs']['template']
 
 
 def test_required_inputs_and_provider_key(client):

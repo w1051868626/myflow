@@ -1,4 +1,4 @@
-export type Kind = "start" | "llm" | "image" | "speech" | "music" | "video" | "asr" | "template" | "end";
+export type Kind = "text" | "start" | "llm" | "image" | "speech" | "music" | "video" | "asr" | "template" | "end";
 export type FlowNode = { id: string; type: Kind; position: { x: number; y: number }; data: Record<string, string> };
 export type Graph = { nodes: FlowNode[]; edges: { id: string; source: string; target: string }[] };
 export type Workflow = { id: string; name: string; graph: Graph; version: number; updated_at: string };
@@ -64,7 +64,30 @@ export const mediaTargets: Partial<Record<Kind, Kind[]>> = {
   music: ["asr", "music", "end"],
   video: ["end"],
 };
-export const nodeKinds: Kind[] = ["start", "llm", "image", "speech", "music", "video", "asr", "template", "end"];
+export const nodeKinds: Kind[] = ["text", "llm", "image", "speech", "music", "video", "asr", "template"];
+
+export function legacyInputFields(graph: Graph): string[] {
+  return [
+    ...new Set(
+      graph.nodes
+        .filter((node) => node.type === "start")
+        .flatMap((node) => outputFields(node).filter((field) => field !== "output")),
+    ),
+  ];
+}
+
+export function nodeDefaults(kind: Kind, registry: Registry, graph: Graph): Record<string, string> {
+  const source = graph.nodes.find((node) => node.type === "text");
+  return Object.fromEntries(
+    Object.entries(registry[kind].properties).map(([key, property]) => {
+      const value =
+        source && kind !== "text"
+          ? property.default.replaceAll("{{start.topic}}", `{{${source.id}.output}}`)
+          : property.default;
+      return [key, value];
+    }),
+  );
+}
 
 export function outputFields(node: FlowNode): string[] {
   return node.type === "start"

@@ -1,7 +1,7 @@
 from collections.abc import Mapping
 import re
 
-from app.schemas import Graph, Node
+from app.schemas import Edge, Graph, Node
 from app.nodes.registry import NODE_REGISTRY
 
 REFERENCE = re.compile(r"{{\s*([a-zA-Z][a-zA-Z0-9_]*)\.([a-zA-Z][a-zA-Z0-9_]*)\s*}}")
@@ -28,7 +28,7 @@ def input_fields(node: Node) -> list[str]:
 
 
 def validate_references(
-    node: Node, nodes: dict[str, Node], ancestors: set[str], fields: list[str],
+    node: Node, nodes: dict[str, Node], ancestors: set[str],
 ) -> None:
     properties = NODE_REGISTRY[node.type]["properties"]
     keys = LEGACY_TEMPLATES | set(properties) | {"label"}
@@ -38,20 +38,24 @@ def validate_references(
     rendered = LEGACY_TEMPLATES | (set(properties) if node.type in MEDIA_NODES else set())
     for key in rendered:
         value = node.data.get(key, "")
-        remainder = REFERENCE.sub("", value)
-        if "{{" in remainder or "}}" in remainder:
-            raise ValueError(f"节点 {node.id} 的变量格式应为 {{{{node.output}}}}")
-        for source, field in REFERENCE.findall(value):
+        for source, field in parse_references(value, node.id):
             if source not in ancestors:
                 raise ValueError(f"{node.id} 只能引用已连接的上游节点：{source}")
-            allowed = reference_fields(nodes[source], fields)
+            allowed = reference_fields(nodes[source])
             if field not in allowed:
                 raise ValueError(f"不支持的变量：{source}.{field}，媒体资源请引用 .url")
 
 
-def reference_fields(node: Node, fields: list[str]) -> list[str]:
+def parse_references(value: str, node_id: str) -> list[tuple[str, str]]:
+    remainder = REFERENCE.sub("", value)
+    if "{{" in remainder or "}}" in remainder:
+        raise ValueError(f"节点 {node_id} 的变量格式应为 {{{{node.output}}}}")
+    return REFERENCE.findall(value)
+
+
+def reference_fields(node: Node) -> list[str]:
     if node.type == "start":
-        return fields + ["output"]
+        return input_fields(node) + ["output"]
     return ["url"] if node.type in MEDIA_TARGETS else ["output"]
 
 
@@ -59,31 +63,49 @@ def validate_graph(graph: Graph) -> tuple[dict[str, Node], dict[str, set[str]], 
     nodes = {node.id: node for node in graph.nodes}
     if len(nodes) != len(graph.nodes):
         raise ValueError("节点 ID 不能重复")
-    starts = [n for n in graph.nodes if n.type == "start"]
-    ends = [n for n in graph.nodes if n.type == "end"]
-    if len(starts) != 1 or len(ends) != 1:
-        raise ValueError("工作流需要且只能有一个开始节点和一个输出节点")
-    fields = input_fields(starts[0])
+    if not nodes:
+        raise ValueError("工作流至少需要一个节点")
+    parents, children = graph_links(graph.edges, nodes)
+    ancestors = graph_ancestors(parents, children)
+    for node in graph.nodes:
+        validate_references(node, nodes, ancestors[node.id])
+        if node.type == "start":
+            input_fields(node)
+        if node.type == "text" and not node.data.get("text", "").strip():
+            raise ValueError(f"请填写文本节点 {node.id} 的文本内容")
+    return nodes, parents, children
+
+
+def validate_edge(edge: Edge, nodes: dict[str, Node], seen: set[tuple[str, str]]) -> None:
+    if edge.source not in nodes or edge.target not in nodes:
+        raise ValueError("连线引用了不存在的节点")
+    if (edge.source, edge.target) in seen:
+        raise ValueError("不能重复连线")
+    src, dst = nodes[edge.source], nodes[edge.target]
+    if src.type == "end" or dst.type in ("start", "text") or src.id == dst.id:
+        raise ValueError("文本输入/开始节点只能输出，输出节点只能接收，节点不能连接自身")
+    if src.type in MEDIA_TARGETS and dst.type not in MEDIA_TARGETS[src.type]:
+        raise ValueError(f"{NODE_REGISTRY[src.type]['title']}不能连接到{NODE_REGISTRY[dst.type]['title']}")
+
+
+def graph_links(
+    edges: list[Edge], nodes: dict[str, Node],
+) -> tuple[dict[str, set[str]], dict[str, set[str]]]:
     parents = {key: set() for key in nodes}
     children = {key: set() for key in nodes}
     seen = set()
-    for edge in graph.edges:
-        if edge.source not in nodes or edge.target not in nodes:
-            raise ValueError("连线引用了不存在的节点")
-        pair = (edge.source, edge.target)
-        if pair in seen:
-            raise ValueError("不能重复连线")
-        seen.add(pair)
-        src, dst = nodes[edge.source], nodes[edge.target]
-        if src.type == "end" or dst.type == "start" or src.id == dst.id:
-            raise ValueError("开始节点只能输出，结束节点只能接收，节点不能连接自身")
-        if src.type in MEDIA_TARGETS and dst.type not in MEDIA_TARGETS[src.type]:
-            raise ValueError(f"{NODE_REGISTRY[src.type]['title']}不能连接到{NODE_REGISTRY[dst.type]['title']}")
-        parents[dst.id].add(src.id)
-        children[src.id].add(dst.id)
+    for edge in edges:
+        validate_edge(edge, nodes, seen)
+        seen.add((edge.source, edge.target))
+        parents[edge.target].add(edge.source)
+        children[edge.source].add(edge.target)
+    return parents, children
+
+
+def graph_ancestors(parents: dict[str, set[str]], children: dict[str, set[str]]) -> dict[str, set[str]]:
     remaining = {key: len(value) for key, value in parents.items()}
     ready = [key for key, count in remaining.items() if count == 0]
-    order, ancestors = [], {key: set() for key in nodes}
+    order, ancestors = [], {key: set() for key in parents}
     while ready:
         key = ready.pop(0)
         order.append(key)
@@ -92,15 +114,17 @@ def validate_graph(graph: Graph) -> tuple[dict[str, Node], dict[str, set[str]], 
             remaining[child] -= 1
             if not remaining[child]:
                 ready.append(child)
-    if len(order) != len(nodes):
+    if len(order) != len(parents):
         raise ValueError("工作流不能包含循环")
-    for node in graph.nodes:
-        if node.id != starts[0].id and starts[0].id not in ancestors[node.id]:
-            raise ValueError(f"节点 {node.id} 无法从开始节点到达")
-        if node.id != ends[0].id and node.id not in ancestors[ends[0].id]:
-            raise ValueError(f"节点 {node.id} 未连接到输出节点")
-        validate_references(node, nodes, ancestors[node.id], fields)
-    return nodes, parents, children
+    return ancestors
+
+
+def run_input_snapshot(graph: Graph, inputs: dict[str, str]) -> dict[str, str]:
+    fields = {field for node in graph.nodes if node.type == "start" for field in input_fields(node)}
+    if set(inputs) != fields or any(not value.strip() for value in inputs.values()):
+        raise ValueError(f"请精确填写输入字段：{', '.join(sorted(fields))}")
+    text_inputs = {f"{node.id}.output": node.data["text"] for node in graph.nodes if node.type == "text"}
+    return {**inputs, **text_inputs}
 
 
 def render(template: str, context: Mapping[str, Mapping[str, object]]) -> str:

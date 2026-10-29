@@ -3,6 +3,16 @@ import json
 from app.engine.graph import input_fields, render
 from app.providers.client import Provider
 from app.nodes.media import ASRNode, MusicNode, SpeechNode, VideoNode
+from app.nodes.media import Context, Emit, NodeExecution
+from app.schemas import Node
+
+
+class TextNode:
+    async def run(
+        self, node: Node, inputs: dict[str, str], context: Context, parents: set[str], emit: Emit,
+    ) -> NodeExecution:
+        text = node.data["text"]
+        return {"output": text}, {"text": text}
 
 
 class StartNode:
@@ -47,4 +57,8 @@ class EndNode:
         return {"output": values}, values
 
 
-RUNNERS = {"start": StartNode(), "llm": LLMNode(), "image": ImageNode(), "speech": SpeechNode(), "music": MusicNode(), "video": VideoNode(), "asr": ASRNode(), "template": TemplateNode(), "end": EndNode()}
+RUNNERS = {
+    "text": TextNode(), "start": StartNode(), "llm": LLMNode(), "image": ImageNode(),
+    "speech": SpeechNode(), "music": MusicNode(), "video": VideoNode(), "asr": ASRNode(),
+    "template": TemplateNode(), "end": EndNode(),
+}

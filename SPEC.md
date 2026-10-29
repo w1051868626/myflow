@@ -6,7 +6,7 @@
 
 ## 产品范围
 
-单机、单用户的可视化 AI 工作流平台：编辑并保存节点图，连接文本、图片、语音、音乐、视频及识别能力，执行后查看流式输出和历史记录。另提供 MiniMax 模型试验台。支持九类节点：start、llm、image、speech、music、video、asr、template、end。
+单机、单用户的可视化 AI 工作流平台：编辑并保存节点图，连接文本、图片、语音、音乐、视频及识别能力，执行后查看流式输出和历史记录。另提供 MiniMax 模型试验台。新建工作流使用 text 文本输入、llm、image、speech、music、video、asr、template；旧版 start/end 节点继续兼容。
 
 当前不承诺：多用户鉴权、分布式调度、多个 Uvicorn worker、条件分支、版本回滚、失败续跑、供应商模型始终可用或临时媒体链接永久有效。增加这些能力需要单独需求，不能隐含在本次改动中。
 
@@ -19,10 +19,11 @@
 | API-001 | `/api/` 业务路由只使用 POST，ID 在 JSON 请求体中，路由不含 ID 占位符；文档和资源仍可 GET。健康检查返回 `{"status":"ok"}`。 | `test_workflows.py::test_post_api_contract_and_get_documentation` |
 | API-002 | 创建返回 201；读取及列表包含工作流；删除返回 204 和空响应体，随后读取返回 404。 | `test_workflows.py::test_workflow_list_and_delete_payload`；前端 `events.test.mjs` 的共享客户端用例 |
 | SAVE-001 | 保存成功版本递增；携带旧版本保存返回 409，已保存的名称、节点和位置不能被覆盖。 | `test_contracts.py::test_save_001_stale_write_cannot_overwrite_saved_graph` |
-| GRAPH-001 | 允许保存不完整草稿；运行时必须拒绝无效图且不创建运行记录。有效图恰有一个开始与输出节点，所有节点均在开始至输出的路径上；禁止重复节点、重复连线、自环、环、悬空引用及方向错误。 | `test_contracts.py::test_graph_001_incomplete_draft_is_saved_but_cannot_run`；`test_workflows.py::test_rejects_invalid_graphs`；下方图校验补充用例 |
+| GRAPH-001 | 允许保存不完整草稿；运行时图非空且为 DAG，不强制开始/输出节点，允许独立分支及多个源节点、末端节点。禁止重复节点、重复连线、自环、环、悬空引用及方向错误；text/旧 start 仅输出、旧 end 仅接收。无效图不创建运行记录。 | `test_contracts.py`、`test_workflows.py` 的图校验；`test_text_workflows.py` |
 | GRAPH-002 | 单图最多 100 个节点、500 条边；超过限制返回 422。 | `test_contracts.py::test_graph_002_graph_size_limits` |
-| INPUT-001 | 开始节点字段唯一且合法；运行输入必须精确匹配字段，值不能空白；非法请求返回 422 且不产生运行记录。 | `test_contracts.py::test_input_001_rejected_inputs_create_no_run`；`test_workflows.py::test_rejects_invalid_graphs` |
-| REF-001 | 变量只能引用已连接的上游；开始节点可引用声明字段及 output，文本/识别/模板用 output，媒体用 url；未知字段及不完整变量语法失败，禁止默默替换为空。 | `test_workflows.py::test_rejects_invalid_graphs`、`test_template_missing_variable_is_error`；`test_media_nodes.py::test_invalid_media_types_and_references_are_rejected` |
+| INPUT-001 | text 节点直接填写非空白文字，作为原样输出，不调用模型；支持多个文本源及单个文本节点独立运行。无旧 start 时运行请求 inputs 可省略或为空，点击运行不弹输入框。旧 start 字段仍须唯一合法，外部 inputs 精确匹配所有旧 start 声明字段的并集且非空白。非法请求 422 且无运行记录。 | `test_text_workflows.py`；原旧版输入测试继续保留 |
+| REF-001 | 变量只能引用已连接的上游；旧 start 只可引用该节点自己声明的字段及 output；text/文本生成/识别/模板用 output，媒体用 url。未知字段及不完整变量语法失败；text 内容为原文，包含花括号也不做模板解析。 | 原变量测试；`test_text_workflows.py` |
+| OUTPUT-001 | 自动收集所有末端节点的结果，按节点 ID 返回文字或媒体；无需显式输出节点。兼容旧 end：继续展开其直接上游结果，多个 end 和其他末端可共存。text 原文同时保存到图快照及运行 inputs（键为 node_id.output），后续编辑不改变历史。 | `test_text_workflows.py`；原历史及输出测试 |
 | RUN-001 | 依赖完成即允许调度，不等待无关分支；单次运行节点并发上限为 4，独立分支能够并行；成功运行只有一个终结事件。 | `test_contracts.py::test_run_001_independent_nodes_run_concurrently_with_limit_four`；`test_workflows.py::test_ready_queue_does_not_wait_for_unrelated_branch` |
 | RUN-002 | 节点失败导致运行 failed，取消同次运行中的其他任务；下游输出不得继续执行，并记录跳过节点。未知模型不可伪装成功。 | `test_workflows.py::test_failure_cancels_sibling_and_skips_end`、`test_failing_model_ends_run` |
 | RUN-003 | 取消运行最终为 cancelled；重启后原 running 记录为 interrupted，并追加对应终结事件。 | `test_workflows.py::test_cancel_running_task`、`test_restart_marks_unfinished_run_interrupted` |
@@ -56,7 +57,9 @@
 
 本节记录可用的验收方式；是否编写或执行测试以用户授权为准。仅要求输出或修改规范时，不执行这些命令。
 
-图校验补充用例为 `test_contracts.py::test_graph_001_invalid_draft_never_creates_a_run`，验证重复连线、自环、悬空端点、开始/输出方向、开始/输出数量、孤立节点及重复字段；游标补充用例为 `test_contracts.py::test_sse_001_cursor_is_exclusive_and_terminal_cursor_closes_stream`。
+图校验补充用例为 `test_contracts.py::test_graph_001_invalid_draft_never_creates_a_run`，验证重复连线、自环、悬空端点、旧开始/输出方向及重复字段；`test_graph_001_additional_terminals_are_valid` 验证多个末端合法。游标补充用例为 `test_contracts.py::test_sse_001_cursor_is_exclusive_and_terminal_cursor_closes_stream`。
+
+输入方式变更说明：原 GRAPH-001 的“恰一个开始/输出节点”和“孤立节点无效”不再适用；多个旧 end 以及无显式输出边的独立分支现在合法，相应用例改为验证自动输出，其他非法图断言保持。旧数据不自动迁移，旧工作流与历史仍可打开和运行。新建工作流默认包含一个文本输入节点，节点库不再提供旧开始/输出节点；文本源删除后可重新添加，新增节点的默认主题引用指向当前文本源。
 
 试验台单次生成补充用例为 `test_contracts.py::test_lab_001_one_trial_never_retries_generation`，同时验证成功和供应商业务失败时均不重试生成。`test_acceptance_default_http_transport_is_blocked` 验证同步和异步 HTTPX 默认传输都被测试夹具阻断。
 

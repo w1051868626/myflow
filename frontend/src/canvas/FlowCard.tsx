@@ -15,11 +15,13 @@ import {
   Video,
   X,
   Play,
+  Type,
 } from "lucide-react";
 import type { Kind, NodeResult } from "@/api/client";
 import { memo } from "react";
 
 export const icons = {
+  text: Type,
   start: Play,
   llm: Sparkles,
   image: Image,
@@ -31,6 +33,7 @@ export const icons = {
   end: ArrowUpRight,
 };
 export const titles = {
+  text: "文本输入",
   start: "开始",
   llm: "文本生成",
   image: "图像生成",
@@ -55,10 +58,11 @@ function FlowCard({ id, data, selected }: NodeProps<CardNode>) {
   const { kind, config, result } = data;
   const Icon = icons[kind];
   const state = result?.status;
-  const preview = result?.text || (typeof result?.output === "string" ? result.output : "");
+  const preview =
+    kind === "text" ? config.text : result?.text || (typeof result?.output === "string" ? result.output : "");
   return (
     <div className={`flow-card ${selected ? "selected" : ""} ${state || ""}`}>
-      {kind !== "start" && <Handle type="target" position={Position.Left} />}
+      {kind !== "start" && kind !== "text" && <Handle type="target" position={Position.Left} />}
       <div className="card-top">
         <span className={`node-icon ${kind}`}>
           <Icon size={17} />
@@ -80,7 +84,9 @@ function FlowCard({ id, data, selected }: NodeProps<CardNode>) {
       <p className="card-description">
         {kind === "start"
           ? `输入 · ${config.fields || "topic"}`
-          : config.model || (kind === "template" ? "整理与组合文本" : "收集创作结果")}
+          : kind === "text"
+            ? "原文输入 · 供下游引用"
+            : config.model || (kind === "template" ? "整理与组合文本" : "收集创作结果")}
       </p>
       {preview && <div className="card-preview">{preview.slice(-140)}</div>}
       {result?.progress && state === "running" && <div className="card-preview">{result.progress}</div>}

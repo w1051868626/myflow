@@ -67,6 +67,7 @@ function Canvas({ graph, results, selected, locked, running, onChange, onSelect,
         a.id === b.id ||
         a.type === "end" ||
         b.type === "start" ||
+        b.type === "text" ||
         (mediaTargets[a.type] && !mediaTargets[a.type]?.includes(b.type))
       )
         return false;
