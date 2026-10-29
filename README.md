@@ -6,6 +6,85 @@
 
 ![MyFlow 图文工作流与运行结果](docs/preview.jpg)
 
+## 前后端结构
+
+以下结构对应当前代码实现。前端使用 Next.js、React 和 React Flow，后端使用 FastAPI、asyncio 和 SQLAlchemy，数据保存在 SQLite 与本地文件目录中。
+
+### 前端结构
+
+```mermaid
+flowchart TD
+    Home["首页 /<br/>app/page.tsx"] --> Editor["canvas/Editor.tsx<br/>工作流编辑、配置、运行、历史"]
+    LabPage["试验台 /models<br/>app/models/page.tsx"] --> Lab["panels/ModelLab.tsx<br/>模型参数与结果预览"]
+
+    Editor --> Canvas["canvas/Canvas.tsx<br/>React Flow 拖拽、连线"]
+    Canvas --> Card["canvas/FlowCard.tsx<br/>节点卡片与执行状态"]
+    Editor --> History["canvas/useGraphHistory.ts + history.ts<br/>撤销与重做"]
+    Editor --> Settings["panels/Settings.tsx<br/>供应商连接设置"]
+    Lab --> Settings
+    Editor --> Client["api/client.ts<br/>类型定义、POST 请求"]
+    Settings --> Client
+    Lab --> Client
+    Editor --> Events["api/events.ts<br/>SSE 解析、断线重连"]
+
+    Client --> Proxy["Next.js 代理<br/>next.config.ts<br/>/api 和 /artifacts"]
+    Events <-->|运行事件流| Proxy
+    Proxy <-->|HTTP| Backend["FastAPI 后端"]
+```
+
+节点配置、运行结果和历史界面目前主要集中在 `frontend/src/canvas/Editor.tsx`，尚未拆成独立面板模块。画布节点的尺寸、位置同步由 `canvas/state.ts` 处理；撤销与重做保存在前端内存中。
+
+### 后端结构
+
+```mermaid
+flowchart TD
+    Frontend["前端请求"] --> Main["main.py · FastAPI<br/>工作流、运行、设置、试验台接口"]
+    Main --> Schema["schemas.py<br/>请求数据结构校验"]
+    Main --> Registry["nodes/registry.py<br/>节点定义与默认参数"]
+    Main --> Graph["engine/graph.py<br/>DAG、连线、输入与变量校验"]
+    Main -->|校验通过后启动| Executor["engine/executor.py<br/>依赖调度、取消、末端自动输出<br/>每次运行最多 4 个并行节点"]
+    Executor --> Graph
+    Executor --> Runners["nodes/runners.py<br/>文本输入、文本生成、图片、模板<br/>兼容旧开始与输出节点"]
+    Runners --> Media["nodes/media.py<br/>语音、音乐、视频、识别"]
+
+    Runners --> Provider["providers/client.py<br/>文本与图片适配、连接和密钥管理"]
+    Media --> MiniMax["providers/minimax.py<br/>多模态请求、视频任务查询"]
+    Main -->|试验台接口| MiniMax
+    MiniMax --> Validation["providers/validation.py<br/>模型参数校验"]
+    Media --> Validation
+
+    Provider --> Remote["外部模型服务<br/>DeepSeek / MiniMax / OpenAI 兼容"]
+    MiniMax --> Remote
+    Provider --> Demo["本地演示模型"]
+    Provider --> Catalog["models.yaml<br/>模型配置"]
+
+    Main --> Models["models.py · SQLAlchemy"]
+    Executor -->|保存运行状态与事件| Models
+    Provider -->|读取与保存加密连接| Models
+    Models --> DB[("SQLite<br/>Workflow / Run / Event / Setting")]
+    Models -->|读取事件后经 SSE 返回| Main
+
+    Main --> Artifacts["artifacts.py<br/>上传与本地资源校验"]
+    Media --> Artifacts
+    Artifacts --> Files[("本地 artifacts 目录<br/>图片、音频等文件")]
+    Provider --> Files
+    MiniMax --> Files
+    Main -->|提供静态资源访问| Files
+```
+
+模型请求由后端发出。API Key 通过设置接口保存后在后端加密落盘，读取接口不返回密钥；前端运行工作流时只提交图配置与输入。
+
+### 工作流运行链路
+
+1. `Editor.tsx` 先保存工作流，再通过 `POST /api/workflows/runs` 请求运行。
+2. `main.py` 校验图与输入，保存图版本、输入及运行快照，再启动执行任务。
+3. `engine/executor.py` 按上游依赖调度节点；每次运行最多同时执行 4 个节点，节点实现通过 `RUNNERS` 分发。
+4. 文本输入、模板等节点在本地处理；需要模型的节点调用供应商适配层。视频只提交一次生成任务，随后查询已有任务状态。
+5. 节点状态、流式文本及结果写入 `Event`；前端通过 `POST /api/runs/events` 订阅 SSE，更新节点卡片和运行面板，断线后携带 `after` 游标重连。
+6. 全部节点成功后，执行器自动收集所有末端结果并保存到 `Run.outputs`；历史回放使用当时的图快照和事件。失败或取消时保存相应终态并结束事件流。
+
+对应契约见 [SPEC.md](SPEC.md)：API-001、GRAPH-001、INPUT-001、RUN-001～003、OUTPUT-001、HISTORY-001、SSE-001～002、PROVIDER-001 和 VIDEO-001。后端使用单个 Uvicorn worker，执行任务保存在进程内，当前不引入 Redis、Celery 或独立调度服务。
+
 ## 快速开始
 
 安装 Docker Engine 与 Docker Compose 插件（Windows/macOS 可使用 Docker Desktop），在项目根目录运行：
