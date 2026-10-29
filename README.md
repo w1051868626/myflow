@@ -12,65 +12,17 @@
 
 ### 前端结构
 
-```mermaid
-flowchart TD
-    Home["首页 /<br/>app/page.tsx"] --> Editor["canvas/Editor.tsx<br/>工作流编辑、配置、运行、历史"]
-    LabPage["试验台 /models<br/>app/models/page.tsx"] --> Lab["panels/ModelLab.tsx<br/>模型参数与结果预览"]
+![MyFlow 前端结构图](docs/architecture/frontend.svg)
 
-    Editor --> Canvas["canvas/Canvas.tsx<br/>React Flow 拖拽、连线"]
-    Canvas --> Card["canvas/FlowCard.tsx<br/>节点卡片与执行状态"]
-    Editor --> History["canvas/useGraphHistory.ts + history.ts<br/>撤销与重做"]
-    Editor --> Settings["panels/Settings.tsx<br/>供应商连接设置"]
-    Lab --> Settings
-    Editor --> Client["api/client.ts<br/>类型定义、POST 请求"]
-    Settings --> Client
-    Lab --> Client
-    Editor --> Events["api/events.ts<br/>SSE 解析、断线重连"]
-
-    Client --> Proxy["Next.js 代理<br/>next.config.ts<br/>/api 和 /artifacts"]
-    Events <-->|运行事件流| Proxy
-    Proxy <-->|HTTP| Backend["FastAPI 后端"]
-```
+[查看 Mermaid 源文件](docs/architecture/frontend.mmd)
 
 节点配置、运行结果和历史界面目前主要集中在 `frontend/src/canvas/Editor.tsx`，尚未拆成独立面板模块。画布节点的尺寸、位置同步由 `canvas/state.ts` 处理；撤销与重做保存在前端内存中。
 
 ### 后端结构
 
-```mermaid
-flowchart TD
-    Frontend["前端请求"] --> Main["main.py · FastAPI<br/>工作流、运行、设置、试验台接口"]
-    Main --> Schema["schemas.py<br/>请求数据结构校验"]
-    Main --> Registry["nodes/registry.py<br/>节点定义与默认参数"]
-    Main --> Graph["engine/graph.py<br/>DAG、连线、输入与变量校验"]
-    Main -->|校验通过后启动| Executor["engine/executor.py<br/>依赖调度、取消、末端自动输出<br/>每次运行最多 4 个并行节点"]
-    Executor --> Graph
-    Executor --> Runners["nodes/runners.py<br/>文本输入、文本生成、图片、模板<br/>兼容旧开始与输出节点"]
-    Runners --> Media["nodes/media.py<br/>语音、音乐、视频、识别"]
+![MyFlow 后端结构图](docs/architecture/backend.svg)
 
-    Runners --> Provider["providers/client.py<br/>文本与图片适配、连接和密钥管理"]
-    Media --> MiniMax["providers/minimax.py<br/>多模态请求、视频任务查询"]
-    Main -->|试验台接口| MiniMax
-    MiniMax --> Validation["providers/validation.py<br/>模型参数校验"]
-    Media --> Validation
-
-    Provider --> Remote["外部模型服务<br/>DeepSeek / MiniMax / OpenAI 兼容"]
-    MiniMax --> Remote
-    Provider --> Demo["本地演示模型"]
-    Provider --> Catalog["models.yaml<br/>模型配置"]
-
-    Main --> Models["models.py · SQLAlchemy"]
-    Executor -->|保存运行状态与事件| Models
-    Provider -->|读取与保存加密连接| Models
-    Models --> DB[("SQLite<br/>Workflow / Run / Event / Setting")]
-    Models -->|读取事件后经 SSE 返回| Main
-
-    Main --> Artifacts["artifacts.py<br/>上传与本地资源校验"]
-    Media --> Artifacts
-    Artifacts --> Files[("本地 artifacts 目录<br/>图片、音频等文件")]
-    Provider --> Files
-    MiniMax --> Files
-    Main -->|提供静态资源访问| Files
-```
+[查看 Mermaid 源文件](docs/architecture/backend.mmd)
 
 模型请求由后端发出。API Key 通过设置接口保存后在后端加密落盘，读取接口不返回密钥；前端运行工作流时只提交图配置与输入。
 

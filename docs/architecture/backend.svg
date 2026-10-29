@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1460"
+viewBox="0 0 1200 1460" role="img" aria-labelledby="title desc">
+<title id="title">MyFlow · 后端结构</title><desc id="desc">FastAPI / asyncio / SQLAlchemy · 单个 Uvicorn worker</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#62758b"/></marker></defs>
+<style>
+text { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif; fill: #243449; }
+.heading { font-size: 28px; font-weight: 700; }
+.subtitle { font-size: 17px; fill: #536579; }
+.title { font-size: 21px; font-weight: 700; }
+.body { font-size: 18px; }
+.label { font-size: 16px; fill: #42556b; paint-order: stroke; stroke: #f6f8fb; stroke-width: 7px; stroke-linejoin: round; }
+</style>
+<rect width="1200" height="1460" rx="16" fill="#f6f8fb"/>
+<text x="40" y="47" class="heading">MyFlow · 后端结构</text>
+<text x="40" y="78" class="subtitle">FastAPI / asyncio / SQLAlchemy · 单个 Uvicorn worker</text>
+<g id="api" data-box="true"><rect x="40" y="110" width="1100" height="130" rx="12" fill="#eaf1fb" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="62" y="144" class="title">main.py · API 入口</text>
+<text x="62" y="175" class="body">工作流 / 运行 / 供应商设置 / MiniMax 试验台 / SSE / 静态资源</text>
+<text x="62" y="203" class="body">schemas.py：请求校验 · nodes/registry.py：节点定义与默认参数</text>
+</g>
+<g id="graph" data-box="true"><rect x="40" y="310" width="660" height="130" rx="12" fill="#ffffff" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="62" y="344" class="title">engine/graph.py · 图与输入校验</text>
+<text x="62" y="375" class="body">DAG、连线方向、变量引用与输入快照</text>
+<text x="62" y="403" class="body">运行前校验；文本输入不解析模板</text>
+</g>
+<g id="executor" data-box="true"><rect x="40" y="510" width="660" height="130" rx="12" fill="#ffffff" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="62" y="544" class="title">engine/executor.py · 执行引擎</text>
+<text x="62" y="575" class="body">按依赖调度，每次运行最多并行 4 个节点</text>
+<text x="62" y="603" class="body">失败与取消处理、末端自动输出</text>
+</g>
+<g id="runners" data-box="true"><rect x="40" y="710" width="660" height="160" rx="12" fill="#ffffff" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="62" y="744" class="title">nodes/runners.py + nodes/media.py · 节点执行</text>
+<text x="62" y="775" class="body">RUNNERS 按节点类型分发</text>
+<text x="62" y="803" class="body">文本 / 文本生成 / 图片 / 模板；兼容旧 start/end</text>
+<text x="62" y="831" class="body">语音 / 音乐 / 视频 / 识别；视频提交一次后查询</text>
+</g>
+<g id="providers" data-box="true"><rect x="40" y="960" width="660" height="160" rx="12" fill="#eaf6ef" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="62" y="994" class="title">providers/ · 供应商适配层</text>
+<text x="62" y="1025" class="body">client.py：文本、图片、连接与加密密钥管理</text>
+<text x="62" y="1053" class="body">minimax.py：多模态请求与任务查询</text>
+<text x="62" y="1081" class="body">validation.py：参数校验 · types.py：共享类型</text>
+</g>
+<g id="remote" data-box="true"><rect x="40" y="1220" width="660" height="130" rx="12" fill="#eaf6ef" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="62" y="1254" class="title">模型执行目标</text>
+<text x="62" y="1285" class="body">DeepSeek / MiniMax / OpenAI 兼容服务</text>
+<text x="62" y="1313" class="body">或无需真实 key 的本地演示模型</text>
+</g>
+<path d="M 370 240 L 370 310" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="385" y="280" class="label">开始运行</text>
+<path d="M 370 440 L 370 510" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 370 640 L 370 710" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 370 870 L 370 960" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="385" y="920" class="label">需要模型的节点</text>
+<path d="M 370 1120 L 370 1220" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<g id="models" data-box="true"><rect x="760" y="310" width="380" height="130" rx="12" fill="#ffffff" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="782" y="344" class="title">models.py · 数据访问</text>
+<text x="782" y="375" class="body">SQLAlchemy 会话与 ORM</text>
+<text x="782" y="403" class="body">运行状态、事件、加密连接</text>
+</g>
+<g id="database" data-box="true"><rect x="760" y="510" width="380" height="130" rx="12" fill="#fff5e6" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="782" y="544" class="title">SQLite · myflow.db</text>
+<text x="782" y="575" class="body">Workflow / Run / Event / Setting</text>
+<text x="782" y="603" class="body">保存图快照、结果与历史事件</text>
+</g>
+<g id="artifacts" data-box="true"><rect x="760" y="710" width="380" height="130" rx="12" fill="#ffffff" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="782" y="744" class="title">artifacts.py · 本地资源</text>
+<text x="782" y="775" class="body">图片与音频上传、路径校验</text>
+<text x="782" y="803" class="body">媒体节点输入读取</text>
+</g>
+<g id="files" data-box="true"><rect x="760" y="910" width="380" height="130" rx="12" fill="#fff5e6" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="782" y="944" class="title">artifacts/ · 产物目录</text>
+<text x="782" y="975" class="body">图片、音频与上传文件</text>
+<text x="782" y="1003" class="body">main.py 提供静态资源访问</text>
+</g>
+<g id="config" data-box="true"><rect x="760" y="1220" width="380" height="130" rx="12" fill="#fff5e6" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="782" y="1254" class="title">配置与密钥</text>
+<text x="782" y="1285" class="body">models.yaml：模型目录</text>
+<text x="782" y="1313" class="body">encryption.key：连接加密密钥</text>
+</g>
+<path d="M 950 240 L 950 310" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="965" y="280" class="label">业务数据 / 历史 / SSE 事件</text>
+<path d="M 950 440 L 950 510" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 700 575 L 730 575 L 730 375 L 760 375" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 1140 175 L 1170 175 L 1170 775 L 1140 775" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 700 790 L 760 790" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 950 840 L 950 910" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 700 1040 L 730 1040 L 730 975 L 760 975" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 700 1080 L 720 1080 L 720 1285 L 760 1285" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="40" y="1414" class="subtitle">运行事件先写入 Event 表，再由 API 通过 SSE 返回前端；执行任务保存在进程内。</text>
+</svg>

@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1160"
+viewBox="0 0 1100 1160" role="img" aria-labelledby="title desc">
+<title id="title">MyFlow · 前端结构</title><desc id="desc">Next.js / React / React Flow · 业务请求使用 POST + JSON</desc>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#62758b"/></marker></defs>
+<style>
+text { font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif; fill: #243449; }
+.heading { font-size: 28px; font-weight: 700; }
+.subtitle { font-size: 17px; fill: #536579; }
+.title { font-size: 21px; font-weight: 700; }
+.body { font-size: 18px; }
+.label { font-size: 16px; fill: #42556b; paint-order: stroke; stroke: #f6f8fb; stroke-width: 7px; stroke-linejoin: round; }
+</style>
+<rect width="1100" height="1160" rx="16" fill="#f6f8fb"/>
+<text x="40" y="47" class="heading">MyFlow · 前端结构</text>
+<text x="40" y="78" class="subtitle">Next.js / React / React Flow · 业务请求使用 POST + JSON</text>
+<g id="pages" data-box="true"><rect x="40" y="110" width="1020" height="130" rx="12" fill="#eaf1fb" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="62" y="144" class="title">页面入口 · frontend/src/app</text>
+<text x="62" y="175" class="body">page.tsx → Editor（工作流首页）</text>
+<text x="62" y="203" class="body">models/page.tsx → ModelLab（模型试验台）</text>
+</g>
+<g id="editor" data-box="true"><rect x="40" y="300" width="590" height="250" rx="12" fill="#ffffff" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="62" y="334" class="title">canvas/Editor.tsx · 工作流编辑器</text>
+<text x="62" y="365" class="body">工作流管理、节点配置、运行结果与历史回放</text>
+<text x="62" y="393" class="body">Canvas.tsx → FlowCard.tsx：画布与节点卡片</text>
+<text x="62" y="421" class="body">state.ts：节点尺寸与位置同步</text>
+<text x="62" y="449" class="body">useGraphHistory.ts + history.ts：撤销与重做</text>
+<text x="62" y="477" class="body">panels/Settings.tsx：供应商连接设置</text>
+</g>
+<g id="lab" data-box="true"><rect x="670" y="300" width="390" height="250" rx="12" fill="#ffffff" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="692" y="334" class="title">panels/ModelLab.tsx · 试验台</text>
+<text x="692" y="365" class="body">模型选择与 JSON 参数编辑</text>
+<text x="692" y="393" class="body">试用结果与媒体预览</text>
+<text x="692" y="421" class="body">已有视频任务状态查询</text>
+<text x="692" y="449" class="body">复用 Settings.tsx 连接设置</text>
+</g>
+<path d="M 330 240 L 330 300" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 865 240 L 865 300" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<g id="client" data-box="true"><rect x="40" y="640" width="490" height="130" rx="12" fill="#eaf6ef" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="62" y="674" class="title">api/client.ts · 业务 API 客户端</text>
+<text x="62" y="705" class="body">共享类型、工作流与设置等 POST 请求</text>
+<text x="62" y="733" class="body">错误处理与空响应处理</text>
+</g>
+<g id="events" data-box="true"><rect x="570" y="640" width="490" height="130" rx="12" fill="#eaf6ef" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="592" y="674" class="title">api/events.ts · 运行事件订阅</text>
+<text x="592" y="705" class="body">POST SSE：流式文本与节点状态</text>
+<text x="592" y="733" class="body">断线携带 after 游标重连</text>
+</g>
+<path d="M 220 550 L 220 640" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 530 550 L 530 595 L 815 595 L 815 640" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<path d="M 865 550 L 865 575 L 350 575 L 350 640" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<g id="proxy" data-box="true"><rect x="210" y="860" width="680" height="110" rx="12" fill="#eaf1fb" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="232" y="894" class="title">Next.js 代理 · frontend/next.config.ts</text>
+<text x="232" y="925" class="body">/api/* 与 /artifacts/* 转发到 BACKEND_URL</text>
+</g>
+<path d="M 285 770 L 285 860" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="300" y="821" class="label">POST JSON</text>
+<path d="M 815 770 L 815 860" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="825" y="821" class="label">POST 订阅 / SSE 返回</text>
+<g id="backend" data-box="true"><rect x="210" y="1030" width="680" height="90" rx="12" fill="#ffffff" stroke="#c5d1dd" stroke-width="1.5"/>
+<text x="232" y="1064" class="title">FastAPI 后端</text>
+<text x="232" y="1095" class="body">业务接口、运行事件流与本地媒体资源</text>
+</g>
+<path d="M 550 970 L 550 1030" fill="none" stroke="#62758b" stroke-width="2" stroke-linejoin="round" marker-end="url(#arrow)"/>
+<text x="565" y="1007" class="label">HTTP</text>
+</svg>

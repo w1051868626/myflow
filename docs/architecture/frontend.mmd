@@ -1,0 +1,19 @@
+flowchart TD
+    Home["首页 /<br/>app/page.tsx"] --> Editor["canvas/Editor.tsx<br/>工作流编辑、配置、运行、历史"]
+    LabPage["试验台 /models<br/>app/models/page.tsx"] --> Lab["panels/ModelLab.tsx<br/>模型参数与结果预览"]
+
+    Editor --> Canvas["canvas/Canvas.tsx<br/>React Flow 拖拽、连线"]
+    Canvas --> Card["canvas/FlowCard.tsx<br/>节点卡片与执行状态"]
+    Editor --> History["canvas/useGraphHistory.ts + history.ts<br/>撤销与重做"]
+    Editor --> Settings["panels/Settings.tsx<br/>供应商连接设置"]
+    Lab --> Settings
+    Editor --> Client["api/client.ts<br/>类型定义、POST 请求"]
+    Settings --> Client
+    Lab --> Client
+    Editor --> Events["api/events.ts<br/>SSE 解析、断线重连"]
+
+    Client --> Proxy["Next.js 代理<br/>next.config.ts<br/>/api 和 /artifacts"]
+    Events -->|POST 订阅| Proxy
+    Proxy -->|SSE 事件| Events
+    Proxy -->|HTTP 请求| Backend["FastAPI 后端"]
+    Backend -->|HTTP 响应| Proxy
