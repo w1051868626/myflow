@@ -4,7 +4,9 @@ import type { RunEvent } from "./client";
 export async function* readEvents(body: ReadableStream<Uint8Array>) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
-  let buffer = "", id = "", data: string[] = [];
+  let buffer = "",
+    id = "",
+    data: string[] = [];
   try {
     while (true) {
       const chunk = await reader.read();
@@ -32,11 +34,7 @@ export async function* readEvents(body: ReadableStream<Uint8Array>) {
   }
 }
 
-export function subscribeRun(
-  id: string,
-  onEvent: (event: RunEvent) => void,
-  onConnection: (message: string) => void,
-) {
+export function subscribeRun(id: string, onEvent: (event: RunEvent) => void, onConnection: (message: string) => void) {
   const controller = new AbortController();
   const { signal } = controller;
   let cursor = 0;
@@ -46,7 +44,8 @@ export function subscribeRun(
     if (signal.aborted) return;
     try {
       const response = await fetch("/api/runs/events", {
-        method: "POST", signal,
+        method: "POST",
+        signal,
         headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
         body: JSON.stringify({ id, after: cursor }),
       });
@@ -66,9 +65,16 @@ export function subscribeRun(
     }
     if (!signal.aborted) {
       onConnection("连接中断，正在自动重连…");
-      retry = setTimeout(() => { void connect(); }, 1000);
+      retry = setTimeout(() => {
+        void connect();
+      }, 1000);
     }
   }
   void connect();
-  return { close() { clearTimeout(retry); controller.abort(); } };
+  return {
+    close() {
+      clearTimeout(retry);
+      controller.abort();
+    },
+  };
 }

@@ -10,8 +10,8 @@ export function reconcileNodes(
   results: Record<string, NodeResult>,
   selected: string | undefined,
 ): CardNode[] {
-  const existing = new Map(current.map(node => [node.id, node]));
-  const next = graph.nodes.map(node => {
+  const existing = new Map(current.map((node) => [node.id, node]));
+  const next = graph.nodes.map((node) => {
     const old = existing.get(node.id);
     const result = results[node.id];
     const isSelected = selected === node.id;
@@ -32,10 +32,10 @@ export function reconcileNodes(
 }
 
 export function withCanvasPositions(graph: Graph, nodes: Pick<CardNode, "id" | "position">[]): Graph {
-  const positions = new Map(nodes.map(node => [node.id, node.position]));
+  const positions = new Map(nodes.map((node) => [node.id, node.position]));
   return {
     ...graph,
-    nodes: graph.nodes.map(node => {
+    nodes: graph.nodes.map((node) => {
       const position = positions.get(node.id);
       return position && (position.x !== node.position.x || position.y !== node.position.y)
         ? { ...node, position: { x: position.x, y: position.y } }

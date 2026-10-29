@@ -12,16 +12,24 @@ const graph = {
 };
 
 function measuredNodes() {
-  return applyNodeChanges(graph.nodes.map(node => ({
-    id: node.id, type: "dimensions", dimensions: { width: 226, height: 150 },
-  })), reconcileNodes([], graph, {}, undefined));
+  return applyNodeChanges(
+    graph.nodes.map((node) => ({
+      id: node.id,
+      type: "dimensions",
+      dimensions: { width: 226, height: 150 },
+    })),
+    reconcileNodes([], graph, {}, undefined),
+  );
 }
 
 test("dragging and editor updates preserve measured dimensions for every node", () => {
   let nodes = measuredNodes();
   const untouched = nodes[1];
   for (let frame = 1; frame <= 30; frame++) {
-    nodes = applyNodeChanges([{ id: "start", type: "position", position: { x: frame * 2, y: 80 }, dragging: true }], nodes);
+    nodes = applyNodeChanges(
+      [{ id: "start", type: "position", position: { x: frame * 2, y: 80 }, dragging: true }],
+      nodes,
+    );
     // Selecting a node / opening its inspector must not restore saved coordinates.
     nodes = reconcileNodes(nodes, graph, {}, "start");
     assert.equal(nodes[0].position.x, frame * 2);
