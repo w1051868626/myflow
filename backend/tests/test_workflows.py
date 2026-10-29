@@ -1,0 +1,202 @@
+import asyncio
+import copy
+import json
+
+import httpx
+import pytest
+from sqlalchemy import select
+
+from app.engine.executor import execute
+from app.engine.graph import render, validate_graph
+from app.examples import example_graph
+from app.models import Event, Run, Session, Setting
+from app.nodes.runners import RUNNERS
+from app.providers.client import Provider
+from app.schemas import Graph
+
+
+def test_restart_marks_unfinished_run_interrupted(client):
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with Session.begin() as db:
+        db.add(Run(id="interrupted-test", status="running", graph=example_graph(), inputs={}))
+    with TestClient(app) as restarted:
+        assert restarted.get("/api/runs/interrupted-test").json()["status"] == "interrupted"
+        replay = events(restarted, "interrupted-test")
+        assert replay[-1]["type"] == "run_finished"
+        assert replay[-1]["data"]["status"] == "interrupted"
+
+
+def workflow(client, graph=None):
+    response = client.post("/api/workflows", json={"name": "测试创作", "graph": graph or example_graph()})
+    assert response.status_code == 201
+    return response.json()
+
+
+def events(client, id, headers=None):
+    response = client.get(f"/api/runs/{id}/events", headers=headers or {})
+    assert response.status_code == 200
+    return [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
+
+
+def test_demo_end_to_end_history_and_reconnect(client):
+    w = workflow(client)
+    response = client.post(f"/api/workflows/{w['id']}/runs", json={"inputs": {"topic": "慢生活"}})
+    assert response.status_code == 201
+    id = response.json()["id"]
+    replay = events(client, id)
+    assert replay[0]["type"] == "run_started"
+    assert any(event["type"] == "llm_token" for event in replay)
+    assert replay[-1]["data"]["status"] == "succeeded"
+    detail = client.get(f"/api/runs/{id}").json()
+    assert "慢生活" in detail["outputs"]["template"]
+    assert client.get(detail["outputs"]["image"]["url"]).status_code == 200
+    assert len([e for e in replay if e["type"] == "node_finished"]) == 5
+    assert client.get(f"/api/workflows/{w['id']}/runs").json()[0]["graph"] == w["graph"]
+    with Session() as db:
+        cursor = db.scalar(select(Event.id).where(Event.run_id == id).order_by(Event.id).limit(1))
+    resumed = events(client, id, {"Last-Event-ID": str(cursor)})
+    assert resumed[0]["type"] != "run_started"
+    assert resumed[-1] == replay[-1]
+
+
+def test_optimistic_save_and_snapshot(client):
+    w = workflow(client)
+    payload = {"name": "更新", "graph": w["graph"], "version": w["version"]}
+    saved = client.put(f"/api/workflows/{w['id']}", json=payload)
+    assert saved.json()["version"] == 2
+    assert client.put(f"/api/workflows/{w['id']}", json=payload).status_code == 409
+    assert client.get(f"/api/workflows/{w['id']}").json()["name"] == "更新"
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda g: g["edges"].append({"id": "cycle", "source": "template", "target": "llm"}),
+    lambda g: g["edges"].pop(),
+    lambda g: g["nodes"][1]["data"].update(prompt="{{image.output}}"),
+    lambda g: g["nodes"][1]["data"].update(prompt="{{start.unknown}}"),
+    lambda g: g["nodes"].append(copy.deepcopy(g["nodes"][0])),
+    lambda g: g["edges"].append({"id": "bad-type", "source": "image", "target": "template"}),
+    lambda g: g["nodes"][0]["data"].update(fields=["topic"]),
+    lambda g: g["nodes"][1]["data"].update(prompt="{{start.topic"),
+])
+def test_rejects_invalid_graphs(client, mutation):
+    graph = example_graph()
+    mutation(graph)
+    with pytest.raises(ValueError):
+        validate_graph(Graph.model_validate(graph))
+
+
+def test_required_inputs_and_provider_key(client):
+    w = workflow(client)
+    assert client.post(f"/api/workflows/{w['id']}/runs", json={"inputs": {}}).status_code == 422
+    response = client.put("/api/provider", json={"base_url": "https://example.com/v1", "api_key": "private-test-key"})
+    assert response.status_code == 200
+    assert "private-test-key" not in response.text
+    assert client.get("/api/provider").json()["configured"]
+    with Session() as db:
+        assert "private-test-key" not in db.get(Setting, "openai").encrypted_key
+    assert client.put("/api/provider", json={"base_url": "file:///etc", "api_key": ""}).status_code == 422
+
+
+def test_cancel_running_task(client):
+    w = workflow(client)
+    run = client.post(f"/api/workflows/{w['id']}/runs", json={"inputs": {"topic": "取消"}}).json()
+    assert client.post(f"/api/runs/{run['id']}/cancel").status_code == 200
+    assert events(client, run["id"])[-1]["data"]["status"] == "cancelled"
+
+
+def test_failing_model_ends_run(client):
+    graph = example_graph()
+    graph["nodes"][1]["data"]["model"] = "nonexistent"
+    w = workflow(client, graph)
+    run = client.post(f"/api/workflows/{w['id']}/runs", json={"inputs": {"topic": "错误"}}).json()
+    replay = events(client, run["id"])
+    assert any(e["type"] == "node_failed" for e in replay)
+    assert replay[-1]["data"]["status"] == "failed"
+
+
+def test_ready_queue_does_not_wait_for_unrelated_branch(client, monkeypatch):
+    async def check():
+        branch_released = asyncio.Event()
+
+        class Template:
+            async def run(self, node, *args):
+                if node.id == "slow":
+                    # A level-by-level gather scheduler would deadlock here.
+                    await asyncio.wait_for(branch_released.wait(), timeout=2)
+                if node.id == "child":
+                    branch_released.set()
+                return {"output": node.id}, {}
+
+        monkeypatch.setitem(RUNNERS, "template", Template())
+        graph = Graph.model_validate({"nodes": [
+            {"id": key, "type": kind, "data": {"fields": "topic"} if kind == "start" else {}}
+            for key, kind in [("start", "start"), ("fast", "template"), ("slow", "template"), ("child", "template"), ("end", "end")]
+        ], "edges": [{"id": str(i), "source": a, "target": b} for i, (a, b) in enumerate([
+            ("start", "fast"), ("start", "slow"), ("fast", "child"), ("slow", "end"), ("child", "end")
+        ])]})
+        with Session.begin() as db:
+            db.add(Run(id="parallel-test", graph=graph.model_dump(), inputs={"topic": "x"}))
+        await execute("parallel-test", graph, {"topic": "x"})
+        with Session() as db:
+            assert db.get(Run, "parallel-test").status == "succeeded"
+
+    asyncio.run(check())
+
+
+def test_openai_stream_adapter(client, monkeypatch):
+    client.put("/api/provider", json={"base_url": "https://example.com/v1", "api_key": "test-key"})
+    real_client = httpx.AsyncClient
+
+    def handler(request):
+        assert request.headers["authorization"] == "Bearer test-key"
+        assert request.url.path == "/v1/chat/completions"
+        return httpx.Response(200, text='data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: {"choices":[],"usage":{"total_tokens":3}}\n\ndata: [DONE]\n\n')
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
+
+    async def check():
+        chunks = [chunk async for chunk in Provider("gpt-4o-mini", "text").chat("system", "prompt")]
+        assert "".join(c["text"] for c in chunks) == "hello"
+        assert chunks[-1]["usage"]["total_tokens"] == 3
+    asyncio.run(check())
+
+
+def test_template_missing_variable_is_error():
+    with pytest.raises(ValueError):
+        render("{{missing.output}}", {})
+
+
+def test_failure_cancels_sibling_and_skips_end(client, monkeypatch):
+    async def check():
+        started, cancelled = asyncio.Event(), asyncio.Event()
+
+        class Branch:
+            async def run(self, node, *args):
+                if node.id == "bad":
+                    await started.wait()
+                    raise ValueError("intentional failure")
+                started.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.set()
+
+        monkeypatch.setitem(RUNNERS, "template", Branch())
+        graph = Graph.model_validate({"nodes": [
+            {"id": key, "type": kind, "data": {"fields": "topic"} if kind == "start" else {}}
+            for key, kind in [("start", "start"), ("bad", "template"), ("slow", "template"), ("end", "end")]
+        ], "edges": [{"id": str(i), "source": a, "target": b} for i, (a, b) in enumerate([
+            ("start", "bad"), ("start", "slow"), ("bad", "end"), ("slow", "end")
+        ])]})
+        with Session.begin() as db:
+            db.add(Run(id="failure-test", graph=graph.model_dump(), inputs={"topic": "x"}))
+        await asyncio.wait_for(execute("failure-test", graph, {"topic": "x"}), timeout=3)
+        assert cancelled.is_set()
+        with Session() as db:
+            assert db.get(Run, "failure-test").status == "failed"
+            rows = list(db.scalars(select(Event).where(Event.run_id == "failure-test")))
+            assert any(e.type == "node_cancelled" and e.data["node_id"] == "slow" for e in rows)
+            assert not any(e.type == "node_started" and e.data["node_id"] == "end" for e in rows)
+    asyncio.run(check())

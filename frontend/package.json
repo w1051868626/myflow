@@ -1,0 +1,9 @@
+{
+  "name": "myflow-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": { "dev": "next dev --hostname 127.0.0.1", "build": "next build", "start": "next start --hostname 0.0.0.0", "typecheck": "tsc --noEmit", "test": "node --experimental-strip-types --test src/canvas/state.test.mjs" },
+  "dependencies": { "next": "^16.0.0", "react": "^19.2.0", "react-dom": "^19.2.0", "@xyflow/react": "^12.9.0", "lucide-react": "^0.468.0" },
+  "devDependencies": { "typescript": "^5.9.0", "@types/node": "^22.0.0", "@types/react": "^19.2.0", "@types/react-dom": "^19.2.0", "tailwindcss": "^4.1.0", "@tailwindcss/postcss": "^4.1.0" },
+  "packageManager": "pnpm@10.18.3"
+}
