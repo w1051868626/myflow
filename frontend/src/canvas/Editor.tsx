@@ -421,9 +421,12 @@ export default function Editor() {
 
   return (
     <main className="workspace">
-      <nav className="rail">
-        <a className="brand" href="/" aria-label="MyFlow">
-          <WorkflowIcon size={24} />
+      <nav className="rail" aria-label="主导航">
+        <a className="rail-home" href="/" aria-label="MyFlow 首页" title="首页">
+          <span className="brand">
+            <WorkflowIcon size={24} aria-hidden="true" />
+          </span>
+          <span className="rail-label">首页</span>
         </a>
         <button
           className="rail-button active"
@@ -431,10 +434,12 @@ export default function Editor() {
           title="工作流"
           onClick={() => setShowWorkflows((v) => !v)}
         >
-          <Layers3 size={20} />
+          <Layers3 size={20} aria-hidden="true" />
+          <span className="rail-label">工作流</span>
         </button>
         <button className="rail-button" title="运行历史" onClick={() => setTab("history")}>
-          <Clock3 size={20} />
+          <Clock3 size={20} aria-hidden="true" />
+          <span className="rail-label">历史</span>
         </button>
         <a
           className="rail-button"
@@ -444,11 +449,13 @@ export default function Editor() {
           target="_blank"
           rel="noreferrer"
         >
-          <FlaskConical size={20} />
+          <FlaskConical size={20} aria-hidden="true" />
+          <span className="rail-label">试验台</span>
         </a>
         <div className="rail-spacer" />
         <button className="rail-button" title="模型设置" onClick={() => setShowSettings(true)}>
-          <Settings2 size={20} />
+          <Settings2 size={20} aria-hidden="true" />
+          <span className="rail-label">设置</span>
         </button>
         <span className="avatar">M</span>
       </nav>
