@@ -17,6 +17,8 @@ import {
   Save,
   Settings2,
   Square,
+  Undo2,
+  Redo2,
   Trash2,
   Workflow as WorkflowIcon,
   X,
@@ -38,6 +40,8 @@ import { subscribeRun } from "@/api/events";
 import { icons, statusNames, titles, type CardNode } from "./FlowCard";
 import Canvas from "./Canvas";
 import Settings from "@/panels/Settings";
+import { useGraphHistory, useHistoryShortcuts } from "./useGraphHistory";
+import type { GraphUpdate } from "./history";
 
 const kinds = nodeKinds;
 const blank: Graph = {
@@ -98,7 +102,7 @@ function Progress({ result }: { result: NodeResult }) {
 export default function Editor() {
   const [workflows, setWorkflows] = useState<Workflow[]>([]);
   const [workflow, setWorkflow] = useState<Workflow>();
-  const [graph, setGraph] = useState<Graph>(blank);
+  const { graph, commit, reset, undo, redo, canUndo, canRedo } = useGraphHistory(blank);
   const [registry, setRegistry] = useState<Registry>();
   const [models, setModels] = useState<Model[]>([]);
   const [selected, setSelected] = useState<string>();
@@ -136,7 +140,7 @@ export default function Editor() {
     (item: Workflow) => {
       source.current?.close();
       setWorkflow(item);
-      setGraph(item.graph);
+      reset(item.graph);
       setDirty(false);
       setSelected(undefined);
       setRun(undefined);
@@ -147,7 +151,7 @@ export default function Editor() {
       loadHistory(item.id).catch((e) => setMessage(e.message));
       setTimeout(() => flow.current?.fitView({ padding: 0.18 }), 100);
     },
-    [loadHistory],
+    [loadHistory, reset],
   );
 
   useEffect(() => {
@@ -175,10 +179,27 @@ export default function Editor() {
     return () => clearTimeout(timer);
   }, [run]);
 
-  const edit = useCallback((next: Graph) => {
-    setGraph(next);
-    setDirty(true);
-  }, []);
+  const edit = useCallback(
+    (next: GraphUpdate): void => {
+      commit(next);
+      setDirty(true);
+    },
+    [commit],
+  );
+  const applyHistory = useCallback(
+    (direction: "undo" | "redo"): boolean => {
+      if (locked || showSettings || showInputs || flow.current?.getNodes().some((node) => node.dragging)) return false;
+      const next = direction === "undo" ? undo() : redo();
+      if (!next) return false;
+      setDirty(true);
+      setSelected((id) => (next.nodes.some((node) => node.id === id) ? id : undefined));
+      return true;
+    },
+    [locked, showSettings, showInputs, undo, redo],
+  );
+  const undoEdit = useCallback((): boolean => applyHistory("undo"), [applyHistory]);
+  const redoEdit = useCallback((): boolean => applyHistory("redo"), [applyHistory]);
+  useHistoryShortcuts({ undo: undoEdit, redo: redoEdit }, locked || showSettings || showInputs);
   const selectNode = useCallback((id: string | undefined) => {
     setSelected(id);
     if (id) setTab("params");
@@ -239,7 +260,7 @@ export default function Editor() {
       if (items[0]) load(items[0]);
       else {
         setWorkflow(undefined);
-        setGraph(blank);
+        reset(blank);
         setResults({});
         setRun(undefined);
         setDirty(false);
@@ -390,11 +411,10 @@ export default function Editor() {
         reader.readAsDataURL(file);
       });
       const resource = await api<{ url: string }>("/artifacts/upload", { file_name: file.name, file_base64: encoded });
-      setGraph((previous) => ({
+      edit((previous) => ({
         ...previous,
         nodes: previous.nodes.map((n) => (n.id === targetId ? { ...n, data: { ...n.data, [key]: resource.url } } : n)),
       }));
-      setDirty(true);
       setMessage("资源已上传，请保存工作流");
     } catch (e) {
       setMessage((e as Error).message);
@@ -540,6 +560,26 @@ export default function Editor() {
                     返回编辑
                   </button>
                 )}
+              </div>
+              <div className="canvas-history" role="group" aria-label="画布撤销与重做">
+                <button
+                  className="icon-button"
+                  disabled={locked || !canUndo}
+                  title="撤销 (Ctrl+Z / ⌘Z)"
+                  aria-label="撤销"
+                  onClick={undoEdit}
+                >
+                  <Undo2 size={18} />
+                </button>
+                <button
+                  className="icon-button"
+                  disabled={locked || !canRedo}
+                  title="重做 (Ctrl+Shift+Z / ⌘⇧Z / Ctrl+Y)"
+                  aria-label="重做"
+                  onClick={redoEdit}
+                >
+                  <Redo2 size={18} />
+                </button>
               </div>
               <span className="small muted">拖动节点 · 连线编排 · 点击配置</span>
             </div>

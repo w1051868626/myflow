@@ -31,7 +31,10 @@
 | SSE-001 | POST 事件流按事件 ID 递增，after 仅返回更大的 ID；终结事件结束流。非法游标 422，不存在运行 404。 | `test_workflows.py::test_demo_end_to_end_history_and_reconnect`、`test_event_payload_validation`、`test_event_run_not_found`；下方游标补充用例 |
 | SSE-002 | 前端正确解码跨字节 UTF-8、CRLF、多行 data、心跳；断线携带最后 after 重连；run_finished / stream_closed 停止重连；关闭订阅中止在途请求。 | `frontend/src/api/events.test.mjs` |
 | CANVAS-001 | 拖动及流式结果更新保留节点尺寸与拖动位置；保存仅持久化图配置和坐标；历史图切换正确同步节点增删与位置。 | `frontend/src/canvas/state.test.mjs` |
+| EDIT-001 | 当前工作流支持 Ctrl/⌘+Z 撤销，Ctrl/⌘+Shift+Z 或 Ctrl+Y 重做，并提供中文按钮；覆盖节点增删、拖动结束的位置、连线、节点配置及上传资源引用。一次拖动记一步，无变化不记步；撤销后新编辑清除重做。最多保留 100 步，不持久化；切换/新建/删除工作流清空编辑历史，保存不清空，撤销/重做后需保存。运行、历史回放、忙碌、弹窗或节点拖动中不允许图撤销；输入框及可编辑区域保留原生撤销，忽略输入法组合与已处理事件。 | `frontend/src/canvas/history.test.mjs`；人工验收快捷键、按钮、实际拖动、保存刷新及窄屏布局。 |
 | NAV-001 | 左侧导航图标常显中文标签：首页、工作流、历史、试验台、设置；桌面及窄屏均可辨认，不依赖悬停。保留原入口、禁用状态与点击行为。 | 人工验收：在桌面和窄屏查看标签，并检查工作流菜单、历史面板、试验台入口及设置弹窗。 |
+| UI-001 | 编辑器画布工具栏提示使用 13px 字号，配置/结果/历史标签页及表单使用 14px，small 辅助说明及变量入口文字至少 12px；提高辅助文字对比度，窄屏节点工具按钮不缩小至 12px 以下。保持现有点击、滚动及画布缩放行为。 | 人工验收：桌面与窄屏查看工具栏、标签页、输入框及节点工具栏，确认文字可读且无截断、重叠。 |
+| UI-002 | 可拖动节点及画布平移使用黑白高对比的张手指针，拖动中使用握手指针并强调节点轮廓；不改变拖动、连线、锁定及坐标保存行为，指针资源不可用时回退至系统 grab/grabbing。 | 人工验收：浅色画布上悬停、拖动和释放节点，确认指针状态及轮廓清晰，连线端点仍可辨认；浏览器验收不能由构建替代。 |
 | PROVIDER-001 | DeepSeek、MiniMax 连接独立存储，密钥加密落盘，读取和保存响应不返回密钥；空密钥保留已有值；未知供应商及非 HTTP(S) Base URL 拒绝。 | `test_workflows.py::test_provider_connections_are_independent_and_keys_stay_private`、`test_required_inputs_and_provider_key` |
 | PROVIDER-002 | 新预置和节点默认文本为 deepseek-flash、图片为 image-01；演示工作流无需真实密钥即可完成，产生文本及可读本地 SVG。 | `test_workflows.py::test_new_workflows_and_node_defaults_use_requested_models`、`test_demo_end_to_end_history_and_reconnect` |
 | PROVIDER-003 | DeepSeek 请求为流式并汇总 token 用量；MiniMax 图片尺寸正确、Base64 保存为本地资源；业务错误码及空图片结果导致失败。 | `test_workflows.py::test_deepseek_stream_adapter`、`test_minimax_adapter_persists_generated_image`、`test_minimax_business_errors_do_not_look_like_success` |

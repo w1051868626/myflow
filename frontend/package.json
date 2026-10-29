@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test src/canvas/state.test.mjs src/api/events.test.mjs"
+    "test": "node --experimental-strip-types --test src/canvas/state.test.mjs src/api/events.test.mjs src/canvas/history.test.mjs"
   },
   "dependencies": {
     "next": "^16.0.0",
