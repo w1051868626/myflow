@@ -10,11 +10,11 @@ export default function Settings({ close }: { close: () => void }) {
   const [configured, setConfigured] = useState(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { api<{ base_url: string; configured: boolean }>("/provider").then(p => { setUrl(p.base_url); setConfigured(p.configured); }).catch(e => setMessage(e.message)); }, []);
+  useEffect(() => { api<{ base_url: string; configured: boolean }>("/provider/get").then(p => { setUrl(p.base_url); setConfigured(p.configured); }).catch(e => setMessage(e.message)); }, []);
   async function save() {
     setBusy(true);
     try {
-      const p = await api<{ configured: boolean }>("/provider", { method: "PUT", body: JSON.stringify({ base_url: url, api_key: key }) });
+      const p = await api<{ configured: boolean }>("/provider/save", { base_url: url, api_key: key });
       setConfigured(p.configured); setKey(""); setMessage("设置已保存");
     } catch (e) { setMessage((e as Error).message); } finally { setBusy(false); }
   }

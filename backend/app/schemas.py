@@ -34,3 +34,19 @@ class RunRequest(BaseModel):
 class ProviderWrite(BaseModel):
     base_url: str
     api_key: str = ""
+
+
+class IdRequest(BaseModel):
+    id: str = Field(min_length=1, max_length=128)
+
+
+class WorkflowSave(WorkflowWrite, IdRequest):
+    pass
+
+
+class WorkflowRun(RunRequest, IdRequest):
+    pass
+
+
+class EventsRequest(IdRequest):
+    after: int = Field(default=0, ge=0)

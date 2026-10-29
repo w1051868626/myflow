@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Edge, ReactFlowInstance } from "@xyflow/react";
 import { ArrowLeft, ArrowUpRight, Check, ChevronDown, Clock3, Command, Layers3, LoaderCircle, Play, Plus, Save, Settings2, Square, Trash2, Workflow as WorkflowIcon, X } from "lucide-react";
-import { ancestors, api, type Graph, type Kind, type Model, type NodeResult, type Registry, type Run, type RunEvent, type Workflow } from "@/api/client";
+import { ancestors, api, type Graph, type Kind, type Model, type NodeResult, type Registry, type Run, type Workflow } from "@/api/client";
+import { subscribeRun } from "@/api/events";
 import { icons, statusNames, titles, type CardNode } from "./FlowCard";
 import Canvas from "./Canvas";
 import Settings from "@/panels/Settings";
@@ -44,7 +45,7 @@ export default function Editor() {
   const [loading, setLoading] = useState(true);
   const [replaying, setReplaying] = useState(false);
   const [connection, setConnection] = useState("");
-  const source = useRef<EventSource | null>(null);
+  const source = useRef<ReturnType<typeof subscribeRun> | null>(null);
   const flow = useRef<ReactFlowInstance<CardNode, Edge> | null>(null);
   const parameterRefs = useRef<Record<string, HTMLTextAreaElement | null>>({});
   const [referenceField, setReferenceField] = useState<string>();
@@ -54,7 +55,7 @@ export default function Editor() {
   const start = graph.nodes.find(n => n.type === "start");
   const fields = (start?.data.fields || "topic").split(",").map(s => s.trim()).filter(Boolean);
 
-  const loadHistory = useCallback(async (id: string) => { setHistory(await api<Run[]>(`/workflows/${id}/runs`)); }, []);
+  const loadHistory = useCallback(async (id: string) => { setHistory(await api<Run[]>("/workflows/runs/list", { id })); }, []);
   const load = useCallback((item: Workflow) => {
     source.current?.close(); setWorkflow(item); setGraph(item.graph); setDirty(false); setSelected(undefined); setRun(undefined); setResults({}); setReplaying(false); setConnection(""); setTab("params");
     loadHistory(item.id).catch(e => setMessage(e.message));
@@ -62,7 +63,7 @@ export default function Editor() {
   }, [loadHistory]);
 
   useEffect(() => {
-    Promise.all([api<Workflow[]>("/workflows"), api<Registry>("/nodes"), api<Model[]>("/models")]).then(([items, definitions, available]) => {
+    Promise.all([api<Workflow[]>("/workflows/list"), api<Registry>("/nodes"), api<Model[]>("/models")]).then(([items, definitions, available]) => {
       setWorkflows(items); setRegistry(definitions); setModels(available); if (items[0]) load(items[0]);
     }).catch(e => setMessage(e.message)).finally(() => setLoading(false));
     return () => source.current?.close();
@@ -89,7 +90,7 @@ export default function Editor() {
   }
   async function save() {
     if (!workflow) throw new Error("请先创建工作流");
-    const saved = await api<Workflow>(`/workflows/${workflow.id}`, { method: "PUT", body: JSON.stringify({ name: workflow.name, graph, version: workflow.version }) });
+    const saved = await api<Workflow>("/workflows/save", { id: workflow.id, name: workflow.name, graph, version: workflow.version });
     setWorkflow(saved); setWorkflows(items => items.map(w => w.id === saved.id ? saved : w)); setDirty(false); return saved;
   }
   async function saveClick() {
@@ -99,7 +100,7 @@ export default function Editor() {
     if (locked) return;
     if (dirty && !window.confirm("当前修改尚未保存，是否创建新的工作流？")) return;
     try {
-      const item = await api<Workflow>("/workflows", { method: "POST", body: JSON.stringify({ name: "未命名工作流", graph: blank }) });
+      const item = await api<Workflow>("/workflows", { name: "未命名工作流", graph: blank });
       setWorkflows(items => [item, ...items]); load(item); setShowWorkflows(false);
     } catch (e) { setMessage((e as Error).message); }
   }
@@ -107,7 +108,7 @@ export default function Editor() {
     if (locked) return;
     if (!workflow || !window.confirm(`删除工作流「${workflow.name}」？`)) return;
     try {
-      await api(`/workflows/${workflow.id}`, { method: "DELETE" });
+      await api("/workflows/delete", { id: workflow.id });
       const items = workflows.filter(w => w.id !== workflow.id); setWorkflows(items);
       if (items[0]) load(items[0]); else { setWorkflow(undefined); setGraph(blank); setResults({}); setRun(undefined); setDirty(false); setHistory([]); setReplaying(false); }
     } catch (e) { setMessage((e as Error).message); }
@@ -115,11 +116,7 @@ export default function Editor() {
 
   function subscribe(item: Run) {
     source.current?.close(); setRun(item); setResults({}); setConnection("连接中…");
-    const stream = new EventSource(`/api/runs/${item.id}/events`); source.current = stream;
-    stream.onopen = () => setConnection("");
-    stream.onerror = () => setConnection("连接中断，正在自动重连…");
-    stream.onmessage = message => {
-      const event = JSON.parse(message.data) as RunEvent;
+    const stream = subscribeRun(item.id, event => {
       const data = event.data;
       if (data.node_id) {
         const key = data.node_id;
@@ -137,21 +134,22 @@ export default function Editor() {
       }
       if (event.type === "run_finished" || event.type === "stream_closed") {
         stream.close(); setConnection("");
-        api<Run>(`/runs/${item.id}`).then(finished => { setRun(finished); return loadHistory(item.workflow_id); }).catch(e => setMessage(e.message));
+        api<Run>("/runs/get", { id: item.id }).then(finished => { setRun(finished); return loadHistory(item.workflow_id); }).catch(e => setMessage(e.message));
       }
-    };
+    }, setConnection);
+    source.current = stream;
   }
   async function execute() {
     setBusy(true); setShowInputs(false); setMessage("");
     try {
       const saved = await save();
       const values = Object.fromEntries(fields.map(key => [key, inputs[key] || ""]));
-      const item = await api<Run>(`/workflows/${saved.id}/runs`, { method: "POST", body: JSON.stringify({ inputs: values }) });
+      const item = await api<Run>("/workflows/runs", { id: saved.id, inputs: values });
       setTab("run"); setReplaying(false); subscribe(item);
     } catch (e) { setMessage((e as Error).message); } finally { setBusy(false); }
   }
   async function stop() {
-    try { if (run) await api(`/runs/${run.id}/cancel`, { method: "POST" }); } catch (e) { setMessage((e as Error).message); }
+    try { if (run) await api("/runs/cancel", { id: run.id }); } catch (e) { setMessage((e as Error).message); }
   }
   function replay(item: Run) {
     setReplaying(true); setSelected(undefined); setTab("run"); subscribe(item);

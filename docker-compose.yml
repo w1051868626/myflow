@@ -5,7 +5,7 @@ services:
       - ./data:/app/data
       - ./backend/models.yaml:/app/models.yaml:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/api/health', method='POST'))"]
       interval: 5s
       timeout: 3s
       retries: 15

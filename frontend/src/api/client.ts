@@ -10,8 +10,8 @@ export type Run = { id: string; workflow_id: string; workflow_version: number; g
 export type RunEvent = { type: string; data: { node_id?: string; text?: string; result?: { output: unknown; usage?: unknown }; inputs?: unknown; elapsed_ms?: number; error?: string; status?: string; outputs?: Record<string, unknown> }; created_at?: string };
 export type NodeResult = { status: string; text?: string; output?: unknown; usage?: unknown; inputs?: unknown; elapsed_ms?: number; error?: string };
 
-export async function api<T>(path: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, { ...options, headers: { "Content-Type": "application/json", ...options?.headers } });
+export async function api<T>(path: string, payload: unknown = {}): Promise<T> {
+  const response = await fetch(`/api${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     throw new Error(typeof body.detail === "string" ? body.detail : `请求失败 (${response.status})`);

@@ -3,7 +3,7 @@ import json
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select, update
@@ -14,7 +14,7 @@ from app.examples import example_graph
 from app.models import Base, DATA_DIR, Event, Run, Session, Workflow, emit, engine, now, run_dict
 from app.nodes.registry import NODE_REGISTRY
 from app.providers.client import catalog, cipher, provider_setting, save_provider
-from app.schemas import Graph, ProviderWrite, RunRequest, WorkflowWrite
+from app.schemas import EventsRequest, Graph, IdRequest, ProviderWrite, WorkflowRun, WorkflowSave, WorkflowWrite
 
 
 @asynccontextmanager
@@ -62,33 +62,33 @@ def get_run(db, id):
     return run
 
 
-@app.get("/api/health")
+@app.post("/api/health")
 def health():
     return {"status": "ok"}
 
 
-@app.get("/api/nodes")
+@app.post("/api/nodes")
 def node_types():
     return NODE_REGISTRY
 
 
-@app.get("/api/models")
+@app.post("/api/models")
 def models():
     return catalog()
 
 
-@app.get("/api/provider")
+@app.post("/api/provider/get")
 def provider():
     return provider_setting()
 
 
-@app.put("/api/provider")
+@app.post("/api/provider/save")
 def configure(body: ProviderWrite):
     save_provider(body.base_url, body.api_key)
     return provider_setting()
 
 
-@app.get("/api/workflows")
+@app.post("/api/workflows/list")
 def workflows():
     with Session() as db:
         return [workflow_dict(w) for w in db.scalars(select(Workflow).order_by(Workflow.updated_at.desc()))]
@@ -104,14 +104,15 @@ def create(body: WorkflowWrite):
         return workflow_dict(workflow)
 
 
-@app.get("/api/workflows/{id}")
-def read(id: str):
+@app.post("/api/workflows/get")
+def read(body: IdRequest):
     with Session() as db:
-        return workflow_dict(get_workflow(db, id))
+        return workflow_dict(get_workflow(db, body.id))
 
 
-@app.put("/api/workflows/{id}")
-def save(id: str, body: WorkflowWrite):
+@app.post("/api/workflows/save")
+def save(body: WorkflowSave):
+    id = body.id
     with Session.begin() as db:
         get_workflow(db, id)
         result = db.execute(update(Workflow).where(Workflow.id == id, Workflow.version == body.version).values(
@@ -122,14 +123,15 @@ def save(id: str, body: WorkflowWrite):
         return workflow_dict(get_workflow(db, id))
 
 
-@app.delete("/api/workflows/{id}", status_code=204)
-def delete(id: str):
+@app.post("/api/workflows/delete", status_code=204)
+def delete(body: IdRequest):
     with Session.begin() as db:
-        db.delete(get_workflow(db, id))
+        db.delete(get_workflow(db, body.id))
 
 
-@app.post("/api/workflows/{id}/runs", status_code=201)
-async def start(id: str, body: RunRequest):
+@app.post("/api/workflows/runs", status_code=201)
+async def start(body: WorkflowRun):
+    id = body.id
     with Session.begin() as db:
         workflow = get_workflow(db, id)
         graph = Graph.model_validate(workflow.graph)
@@ -146,20 +148,21 @@ async def start(id: str, body: RunRequest):
     return result
 
 
-@app.get("/api/workflows/{id}/runs")
-def history(id: str):
+@app.post("/api/workflows/runs/list")
+def history(body: IdRequest):
     with Session() as db:
-        return [run_dict(run) for run in db.scalars(select(Run).where(Run.workflow_id == id).order_by(Run.created_at.desc()).limit(50))]
+        return [run_dict(run) for run in db.scalars(select(Run).where(Run.workflow_id == body.id).order_by(Run.created_at.desc()).limit(50))]
 
 
-@app.get("/api/runs/{id}")
-def detail(id: str):
+@app.post("/api/runs/get")
+def detail(body: IdRequest):
     with Session() as db:
-        return run_dict(get_run(db, id))
+        return run_dict(get_run(db, body.id))
 
 
-@app.post("/api/runs/{id}/cancel")
-async def cancel(id: str):
+@app.post("/api/runs/cancel")
+async def cancel(body: IdRequest):
+    id = body.id
     with Session() as db:
         run = get_run(db, id)
         status = run.status
@@ -169,14 +172,12 @@ async def cancel(id: str):
     return {"status": status, "cancellation_requested": bool(task)}
 
 
-@app.get("/api/runs/{id}/events")
-async def events(id: str, request: Request, after: int = 0, last_event_id: str | None = Header(None)):
+@app.post("/api/runs/events")
+async def events(body: EventsRequest, request: Request):
+    id = body.id
     with Session() as db:
         get_run(db, id)
-    try:
-        cursor = max(0, after, int(last_event_id or 0))
-    except ValueError:
-        raise HTTPException(400, "无效的事件游标")
+    cursor = body.after
 
     async def stream():
         nonlocal cursor

@@ -22,7 +22,7 @@ def test_restart_marks_unfinished_run_interrupted(client):
     with Session.begin() as db:
         db.add(Run(id="interrupted-test", status="running", graph=example_graph(), inputs={}))
     with TestClient(app) as restarted:
-        assert restarted.get("/api/runs/interrupted-test").json()["status"] == "interrupted"
+        assert restarted.post("/api/runs/get", json={"id": "interrupted-test"}).json()["status"] == "interrupted"
         replay = events(restarted, "interrupted-test")
         assert replay[-1]["type"] == "run_finished"
         assert replay[-1]["data"]["status"] == "interrupted"
@@ -34,40 +34,72 @@ def workflow(client, graph=None):
     return response.json()
 
 
-def events(client, id, headers=None):
-    response = client.get(f"/api/runs/{id}/events", headers=headers or {})
+def test_post_api_contract_and_get_documentation(client):
+    schema = client.get("/openapi.json").json()
+    for path, operations in schema["paths"].items():
+        if path.startswith("/api/"):
+            assert set(operations) == {"post"}, path
+            assert "{" not in path, path
+    assert client.get("/docs").status_code == 200
+    assert client.get("/redoc").status_code == 200
+    assert client.get("/api/health").status_code == 405
+    assert client.post("/api/health").json() == {"status": "ok"}
+    assert client.post("/api/nodes").json()
+    assert client.post("/api/models").json()
+
+
+def test_workflow_list_and_delete_payload(client):
+    w = workflow(client)
+    assert any(item["id"] == w["id"] for item in client.post("/api/workflows/list").json())
+    response = client.post("/api/workflows/delete", json={"id": w["id"]})
+    assert response.status_code == 204
+    assert response.content == b""
+    assert client.post("/api/workflows/get", json={"id": w["id"]}).status_code == 404
+
+
+@pytest.mark.parametrize("payload", [{}, {"id": ""}, {"id": "missing", "after": -1}, {"id": "missing", "after": "bad"}])
+def test_event_payload_validation(client, payload):
+    assert client.post("/api/runs/events", json=payload).status_code == 422
+
+
+def test_event_run_not_found(client):
+    assert client.post("/api/runs/events", json={"id": "missing"}).status_code == 404
+
+
+def events(client, id, after=0):
+    response = client.post("/api/runs/events", json={"id": id, "after": after})
     assert response.status_code == 200
     return [json.loads(line[6:]) for line in response.text.splitlines() if line.startswith("data: ")]
 
 
 def test_demo_end_to_end_history_and_reconnect(client):
     w = workflow(client)
-    response = client.post(f"/api/workflows/{w['id']}/runs", json={"inputs": {"topic": "慢生活"}})
+    response = client.post("/api/workflows/runs", json={"id": w["id"], "inputs": {"topic": "慢生活"}})
     assert response.status_code == 201
     id = response.json()["id"]
     replay = events(client, id)
     assert replay[0]["type"] == "run_started"
     assert any(event["type"] == "llm_token" for event in replay)
     assert replay[-1]["data"]["status"] == "succeeded"
-    detail = client.get(f"/api/runs/{id}").json()
+    detail = client.post("/api/runs/get", json={"id": id}).json()
     assert "慢生活" in detail["outputs"]["template"]
     assert client.get(detail["outputs"]["image"]["url"]).status_code == 200
     assert len([e for e in replay if e["type"] == "node_finished"]) == 5
-    assert client.get(f"/api/workflows/{w['id']}/runs").json()[0]["graph"] == w["graph"]
+    assert client.post("/api/workflows/runs/list", json={"id": w["id"]}).json()[0]["graph"] == w["graph"]
     with Session() as db:
         cursor = db.scalar(select(Event.id).where(Event.run_id == id).order_by(Event.id).limit(1))
-    resumed = events(client, id, {"Last-Event-ID": str(cursor)})
+    resumed = events(client, id, cursor)
     assert resumed[0]["type"] != "run_started"
     assert resumed[-1] == replay[-1]
 
 
 def test_optimistic_save_and_snapshot(client):
     w = workflow(client)
-    payload = {"name": "更新", "graph": w["graph"], "version": w["version"]}
-    saved = client.put(f"/api/workflows/{w['id']}", json=payload)
+    payload = {"id": w["id"], "name": "更新", "graph": w["graph"], "version": w["version"]}
+    saved = client.post("/api/workflows/save", json=payload)
     assert saved.json()["version"] == 2
-    assert client.put(f"/api/workflows/{w['id']}", json=payload).status_code == 409
-    assert client.get(f"/api/workflows/{w['id']}").json()["name"] == "更新"
+    assert client.post("/api/workflows/save", json=payload).status_code == 409
+    assert client.post("/api/workflows/get", json={"id": w["id"]}).json()["name"] == "更新"
 
 
 @pytest.mark.parametrize("mutation", [
@@ -89,20 +121,20 @@ def test_rejects_invalid_graphs(client, mutation):
 
 def test_required_inputs_and_provider_key(client):
     w = workflow(client)
-    assert client.post(f"/api/workflows/{w['id']}/runs", json={"inputs": {}}).status_code == 422
-    response = client.put("/api/provider", json={"base_url": "https://example.com/v1", "api_key": "private-test-key"})
+    assert client.post("/api/workflows/runs", json={"id": w["id"], "inputs": {}}).status_code == 422
+    response = client.post("/api/provider/save", json={"base_url": "https://example.com/v1", "api_key": "private-test-key"})
     assert response.status_code == 200
     assert "private-test-key" not in response.text
-    assert client.get("/api/provider").json()["configured"]
+    assert client.post("/api/provider/get").json()["configured"]
     with Session() as db:
         assert "private-test-key" not in db.get(Setting, "openai").encrypted_key
-    assert client.put("/api/provider", json={"base_url": "file:///etc", "api_key": ""}).status_code == 422
+    assert client.post("/api/provider/save", json={"base_url": "file:///etc", "api_key": ""}).status_code == 422
 
 
 def test_cancel_running_task(client):
     w = workflow(client)
-    run = client.post(f"/api/workflows/{w['id']}/runs", json={"inputs": {"topic": "取消"}}).json()
-    assert client.post(f"/api/runs/{run['id']}/cancel").status_code == 200
+    run = client.post("/api/workflows/runs", json={"id": w["id"], "inputs": {"topic": "取消"}}).json()
+    assert client.post("/api/runs/cancel", json={"id": run["id"]}).status_code == 200
     assert events(client, run["id"])[-1]["data"]["status"] == "cancelled"
 
 
@@ -110,7 +142,7 @@ def test_failing_model_ends_run(client):
     graph = example_graph()
     graph["nodes"][1]["data"]["model"] = "nonexistent"
     w = workflow(client, graph)
-    run = client.post(f"/api/workflows/{w['id']}/runs", json={"inputs": {"topic": "错误"}}).json()
+    run = client.post("/api/workflows/runs", json={"id": w["id"], "inputs": {"topic": "错误"}}).json()
     replay = events(client, run["id"])
     assert any(e["type"] == "node_failed" for e in replay)
     assert replay[-1]["data"]["status"] == "failed"
@@ -146,7 +178,7 @@ def test_ready_queue_does_not_wait_for_unrelated_branch(client, monkeypatch):
 
 
 def test_openai_stream_adapter(client, monkeypatch):
-    client.put("/api/provider", json={"base_url": "https://example.com/v1", "api_key": "test-key"})
+    client.post("/api/provider/save", json={"base_url": "https://example.com/v1", "api_key": "test-key"})
     real_client = httpx.AsyncClient
 
     def handler(request):

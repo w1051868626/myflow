@@ -20,7 +20,7 @@
 │  前端 (Next.js + React Flow)                 │
 │  画布编辑 / 节点参数面板 / 运行预览 / 日志     │
 └──────────────┬──────────────────────────────┘
-               │ REST + SSE (运行事件流)
+               │ POST JSON + SSE (运行事件流)
 ┌──────────────▼──────────────────────────────┐
 │  后端 API (FastAPI)                          │
 │  工作流 CRUD / 版本 / 执行触发 / 密钥管理      │
@@ -92,7 +92,7 @@ class Provider(Protocol):
 | 前端 | Next.js + TypeScript + React Flow + Tailwind | React Flow 是事实标准 |
 | 后端 | FastAPI + SQLAlchemy + SQLite | 异步原生，SQLite 免部署 |
 | 并发 | asyncio（就绪队列） | 单机够用，避免引入 Celery/Redis |
-| 通信 | REST + SSE | 流式输出 + 运行事件 |
+| 通信 | POST JSON + SSE | 业务参数使用 payload；流式输出 + 运行事件 |
 | 产物存储 | 本地 `./data` 目录 | 零依赖跑起来 |
 | 部署 | Docker Compose（前端+后端两个容器） | 一条命令跑通 |
 

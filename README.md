@@ -52,7 +52,34 @@ API Key 使用 Fernet 加密，不会通过读取接口返回。首次启动自�
 - 文本节点可连接文本、图像、模板与输出节点；图像输出只能接到输出节点。MVP 暂不支持图像输入 LLM。
 - 输出节点自动收集直接上游结果。点击节点可查看输入、输出、耗时和供应商返回的 token 用量。
 - 运行结果页可以停止当前运行。历史页显示最近 50 次运行，点击记录会重放事件并展示当时的画布快照；点击「返回编辑」继续编辑。
-- SSE 断线会自动重连，使用事件 ID 从断点继续。刷新页面后，可从历史页重新打开正在运行的记录。
+- SSE 通过 POST 流式读取，断线会自动重连，使用 payload 中的 `after` 事件 ID 从断点继续。刷新页面后，可从历史页重新打开正在运行的记录。
+
+### API 调用约定
+
+本项目 `/api/` 业务接口统一使用 **POST + JSON payload**，ID 等参数放在请求体中。资源文件 `/artifacts/*`、接口文档 `/docs`、`/redoc` 和 `/openapi.json` 保留 GET；页面及前端静态资源照常使用 GET。以下地址由后端直接提供，前端开发代理转发 `/api/*` 和 `/artifacts/*`。
+
+| 操作 | POST 地址 | payload |
+| --- | --- | --- |
+| 健康检查、节点定义、模型列表 | `/api/health`、`/api/nodes`、`/api/models` | `{}` |
+| 读取模型连接 | `/api/provider/get` | `{}` |
+| 保存模型连接 | `/api/provider/save` | `{"base_url":"https://example.com/v1","api_key":"…"}` |
+| 工作流列表 | `/api/workflows/list` | `{}` |
+| 创建工作流 | `/api/workflows` | `{"name":"名称","graph":{"nodes":[],"edges":[]}}` |
+| 读取工作流 | `/api/workflows/get` | `{"id":"工作流ID"}` |
+| 保存工作流 | `/api/workflows/save` | `{"id":"工作流ID","name":"名称","graph":{"nodes":[],"edges":[]},"version":1}` |
+| 删除工作流 | `/api/workflows/delete` | `{"id":"工作流ID"}` |
+| 启动运行 | `/api/workflows/runs` | `{"id":"工作流ID","inputs":{"topic":"主题"}}` |
+| 运行历史 | `/api/workflows/runs/list` | `{"id":"工作流ID"}` |
+| 运行详情、取消运行 | `/api/runs/get`、`/api/runs/cancel` | `{"id":"运行ID"}` |
+| 运行事件流 | `/api/runs/events` | `{"id":"运行ID","after":0}` |
+
+事件流仍返回 `text/event-stream`，`after` 可省略（默认 0）。例如在 PowerShell 中查看实时事件：
+
+```powershell
+'{"id":"替换为运行ID","after":0}' | curl.exe -N -X POST "http://127.0.0.1:8000/api/runs/events" -H "Content-Type: application/json" --data-binary '@-'
+```
+
+此约定替换旧的 GET/PUT/DELETE 业务路由及带 ID 的 URL，外部调用方也需同步更新。上游模型服务仍按供应商协议调用。
 
 ## 本地开发
 
