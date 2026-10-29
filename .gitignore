@@ -45,6 +45,8 @@ next-env.d.ts
 *.db-wal
 *.db-shm
 *.log
+/docs/minimax-model-check.json
+/docs/media-workflow-check.json
 
 # Local editor and operating system files
 .atomcode/

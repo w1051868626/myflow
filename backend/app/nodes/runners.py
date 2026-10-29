@@ -2,6 +2,7 @@ import json
 
 from app.engine.graph import input_fields, render
 from app.providers.client import Provider
+from app.nodes.media import ASRNode, MusicNode, SpeechNode, VideoNode
 
 
 class StartNode:
@@ -14,7 +15,7 @@ class LLMNode:
     async def run(self, node, inputs, context, parents, emit):
         prompt = render(node.data.get("prompt", ""), context)
         system = render(node.data.get("system", ""), context)
-        provider = Provider(node.data.get("model", "demo-text"), "text")
+        provider = Provider(node.data.get("model", "deepseek-flash"), "text")
         output, usage = "", None
         async for chunk in provider.chat(system, prompt):
             if chunk.get("usage"):
@@ -28,9 +29,10 @@ class LLMNode:
 class ImageNode:
     async def run(self, node, inputs, context, parents, emit):
         prompt = render(node.data.get("prompt", ""), context)
-        provider = Provider(node.data.get("model", "demo-image"), "image")
+        provider = Provider(node.data.get("model", "image-01"), "image")
         image = await provider.text2img(prompt, node.data.get("size", "1024x1024"))
-        return {"output": image}, {"prompt": prompt, "model": provider.model}
+        image["kind"] = "image"
+        return {"output": image, "url": image["url"]}, {"prompt": prompt, "model": provider.model}
 
 
 class TemplateNode:
@@ -45,4 +47,4 @@ class EndNode:
         return {"output": values}, values
 
 
-RUNNERS = {"start": StartNode(), "llm": LLMNode(), "image": ImageNode(), "template": TemplateNode(), "end": EndNode()}
+RUNNERS = {"start": StartNode(), "llm": LLMNode(), "image": ImageNode(), "speech": SpeechNode(), "music": MusicNode(), "video": VideoNode(), "asr": ASRNode(), "template": TemplateNode(), "end": EndNode()}

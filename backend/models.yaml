@@ -7,11 +7,50 @@ models:
     name: 演示图像 · 无需密钥
     kind: image
     provider: demo
-  - id: gpt-4o-mini
-    name: GPT-4o mini
+  - id: deepseek-flash
+    name: DeepSeek Flash
     kind: text
-    provider: openai
-  - id: gpt-image-1
-    name: GPT Image 1
+    provider: deepseek
+  - id: image-01
+    name: MiniMax Image-01
     kind: image
-    provider: openai
+    provider: minimax
+  - {id: image-01-live, name: MiniMax Image-01 Live, kind: image, provider: minimax}
+  - {id: MiniMax-M3.1-Flash, name: MiniMax M3.1 Flash, kind: text, provider: minimax_text}
+  - {id: MiniMax-M3, name: MiniMax M3, kind: text, provider: minimax_text}
+  - {id: MiniMax-M2.7, name: MiniMax M2.7, kind: text, provider: minimax_text}
+  - {id: MiniMax-M2.7-highspeed, name: MiniMax M2.7 Highspeed, kind: text, provider: minimax_text}
+  - {id: MiniMax-M2.5, name: MiniMax M2.5, kind: text, provider: minimax_text}
+  - {id: MiniMax-M2.5-highspeed, name: MiniMax M2.5 Highspeed, kind: text, provider: minimax_text}
+  - {id: MiniMax-M2.1, name: MiniMax M2.1, kind: text, provider: minimax_text}
+  - {id: MiniMax-M2.1-highspeed, name: MiniMax M2.1 Highspeed, kind: text, provider: minimax_text}
+  - {id: MiniMax-M2, name: MiniMax M2, kind: text, provider: minimax_text}
+  - {id: M2-her, name: MiniMax M2-her, kind: text, provider: minimax_text}
+  - {id: speech-2.8-hd, name: Speech 2.8 HD, kind: speech, provider: minimax}
+  - {id: speech-2.8-turbo, name: Speech 2.8 Turbo, kind: speech, provider: minimax}
+  - {id: speech-2.6-hd, name: Speech 2.6 HD, kind: speech, provider: minimax}
+  - {id: speech-2.6-turbo, name: Speech 2.6 Turbo, kind: speech, provider: minimax}
+  - {id: speech-02-hd, name: Speech 02 HD, kind: speech, provider: minimax}
+  - {id: speech-02-turbo, name: Speech 02 Turbo, kind: speech, provider: minimax}
+  - {id: speech-01-hd, name: Speech 01 HD, kind: speech, provider: minimax}
+  - {id: speech-01-turbo, name: Speech 01 Turbo, kind: speech, provider: minimax}
+  - {id: music-3.0, name: Music 3.0, kind: music, provider: minimax}
+  - {id: music-3.0-free, name: Music 3.0 Free, kind: music, provider: minimax}
+  - {id: music-2.6, name: Music 2.6, kind: music, provider: minimax}
+  - {id: music-2.6-free, name: Music 2.6 Free, kind: music, provider: minimax}
+  - {id: music-cover, name: Music Cover, kind: music, provider: minimax, reference: audio}
+  - {id: music-cover-free, name: Music Cover Free, kind: music, provider: minimax, reference: audio}
+  - {id: MiniMax-H3, name: MiniMax H3, kind: video, provider: minimax, api_version: v2}
+  - {id: MiniMax-H3-Highspeed, name: MiniMax H3 Highspeed, kind: video, provider: minimax, api_version: v2}
+  - {id: MiniMax-H3-Lite, name: MiniMax H3 Lite, kind: video, provider: minimax, api_version: v2}
+  - {id: MiniMax-H3-Max, name: MiniMax H3 Max, kind: video, provider: minimax, api_version: v2}
+  - {id: MiniMax-Hailuo-2.3, name: Hailuo 2.3, kind: video, provider: minimax}
+  - {id: MiniMax-Hailuo-02, name: Hailuo 02, kind: video, provider: minimax}
+  - {id: T2V-01-Director, name: T2V 01 Director, kind: video, provider: minimax}
+  - {id: T2V-01, name: T2V 01, kind: video, provider: minimax}
+  - {id: MiniMax-Hailuo-2.3-Fast, name: Hailuo 2.3 Fast, kind: video, provider: minimax, reference: image}
+  - {id: I2V-01-Director, name: I2V 01 Director, kind: video, provider: minimax, reference: image}
+  - {id: I2V-01-live, name: I2V 01 Live, kind: video, provider: minimax, reference: image}
+  - {id: I2V-01, name: I2V 01, kind: video, provider: minimax, reference: image}
+  - {id: S2V-01, name: S2V 01, kind: video, provider: minimax, reference: subject}
+  - {id: asr-1.0, name: MiniMax ASR 1.0, kind: asr, provider: minimax, reference: file}

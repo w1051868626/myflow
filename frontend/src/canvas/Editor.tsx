@@ -2,14 +2,14 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Edge, ReactFlowInstance } from "@xyflow/react";
-import { ArrowLeft, ArrowUpRight, Check, ChevronDown, Clock3, Command, Layers3, LoaderCircle, Play, Plus, Save, Settings2, Square, Trash2, Workflow as WorkflowIcon, X } from "lucide-react";
-import { ancestors, api, type Graph, type Kind, type Model, type NodeResult, type Registry, type Run, type Workflow } from "@/api/client";
+import { ArrowLeft, ArrowUpRight, Check, ChevronDown, Clock3, Command, FlaskConical, Layers3, LoaderCircle, Play, Plus, Save, Settings2, Square, Trash2, Workflow as WorkflowIcon, X } from "lucide-react";
+import { ancestors, api, nodeKinds, outputFields, type Graph, type Kind, type Model, type NodeResult, type Registry, type Run, type Workflow } from "@/api/client";
 import { subscribeRun } from "@/api/events";
 import { icons, statusNames, titles, type CardNode } from "./FlowCard";
 import Canvas from "./Canvas";
 import Settings from "@/panels/Settings";
 
-const kinds: Kind[] = ["start", "llm", "image", "template", "end"];
+const kinds = nodeKinds;
 const blank: Graph = { nodes: [
   { id: "start", type: "start", position: { x: 0, y: 80 }, data: { label: "创作主题", fields: "topic" } },
   { id: "end", type: "end", position: { x: 620, y: 80 }, data: { label: "创作完成" } },
@@ -18,10 +18,16 @@ const blank: Graph = { nodes: [
 function Output({ value }: { value: unknown }) {
   if (value && typeof value === "object" && "url" in value && typeof value.url === "string") {
     const url = value.url;
-    if (!url.startsWith("/artifacts/") && !/^https?:\/\//.test(url)) return <p>无效的图片地址</p>;
-    return <div className="image-output"><a href={url} target="_blank" rel="noreferrer"><img src={url} alt="工作流生成图片" /></a>{"demo" in value && <span className="demo-tag">演示图像</span>}{"temporary" in value && <p className="muted small">供应商临时链接，请及时保存。</p>}</div>;
+    if (!url.startsWith("/artifacts/") && !/^https?:\/\//.test(url)) return <p>无效的资源地址</p>;
+    const kind = "kind" in value ? value.kind : "image";
+    return <div className="image-output media-output">{kind === "audio" ? <audio controls preload="metadata" src={url} /> : kind === "video" ? <video controls preload="metadata" src={url} /> : <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="工作流生成图片" /></a>}<a className="text-button" href={url} target="_blank" rel="noreferrer">打开资源 <ArrowUpRight size={12} /></a>{"demo" in value && <span className="demo-tag">演示图像</span>}{"temporary" in value && <p className="muted small">供应商临时链接，请及时保存。</p>}</div>;
   }
   return <pre className="output-text">{typeof value === "string" ? value : JSON.stringify(value, null, 2)}</pre>;
+}
+
+function Progress({ result }: { result: NodeResult }) {
+  if (!result.task_id) return null;
+  return <div className="node-progress">{result.status === "running" && <p>{result.progress}</p>}<small>任务 ID：<code>{result.task_id}</code></small><a className="text-button" href={`/models?task_id=${encodeURIComponent(result.task_id)}&api_version=${result.api_version || "v2"}`} target="_blank" rel="noreferrer">在试验台查询 <ArrowUpRight size={12} /></a></div>;
 }
 
 export default function Editor() {
@@ -125,6 +131,7 @@ export default function Editor() {
           let result = old;
           if (event.type === "node_started") result = { status: "running" };
           if (event.type === "llm_token") result = { ...old, text: (old.text || "") + (data.text || "") };
+          if (event.type === "node_progress") result = { ...old, progress: data.status, task_id: data.task_id, api_version: data.api_version };
           if (event.type === "node_finished") result = { ...old, status: "succeeded", output: data.result?.output, usage: data.result?.usage, inputs: data.inputs, elapsed_ms: data.elapsed_ms };
           if (event.type === "node_failed") result = { ...old, status: "failed", error: data.error, elapsed_ms: data.elapsed_ms };
           if (event.type === "node_cancelled") result = { ...old, status: "cancelled", elapsed_ms: data.elapsed_ms };
@@ -173,10 +180,37 @@ export default function Editor() {
     const text = `${before}{{${reference}}}${value.slice(element?.selectionEnd ?? pos)}`;
     updateData(field, text); setReferenceField(undefined); element?.focus();
   }
-  const variables = picked ? ancestors(picked.id, viewedGraph).filter(n => n.type !== "image").flatMap(n => (n.type === "start" ? [...(n.data.fields || "topic").split(",").map(s => s.trim()).filter(Boolean), "output"] : ["output"]).map(key => `${n.id}.${key}`)) : [];
+  async function uploadResource(key: string, file?: File) {
+    if (!picked || !file || locked) return;
+    if (file.size > 20 * 1024 * 1024) { setMessage("文件不能超过 20 MB"); return; }
+    const targetId = picked.id;
+    setBusy(true);
+    try {
+      const encoded = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result).split(",")[1]);
+        reader.onerror = () => reject(new Error("读取文件失败"));
+        reader.readAsDataURL(file);
+      });
+      const resource = await api<{ url: string }>("/artifacts/upload", { file_name: file.name, file_base64: encoded });
+      setGraph(previous => ({ ...previous, nodes: previous.nodes.map(n => n.id === targetId ? { ...n, data: { ...n.data, [key]: resource.url } } : n) }));
+      setDirty(true); setMessage("资源已上传，请保存工作流");
+    } catch (e) { setMessage((e as Error).message); } finally { setBusy(false); }
+  }
+  function changeModel(id: string) {
+    if (!picked || locked) return;
+    const defaults: Record<string, string> = { model: id };
+    if (picked.type === "video") {
+      const h3 = id.startsWith("MiniMax-H3");
+      defaults.duration = h3 ? "5" : "6";
+      defaults.resolution = h3 || id.startsWith("MiniMax-Hailuo-") ? "768P" : "720P";
+    }
+    edit({ ...graph, nodes: graph.nodes.map(n => n.id === picked.id ? { ...n, data: { ...n.data, ...defaults } } : n) });
+  }
+  const variables = picked ? ancestors(picked.id, viewedGraph).flatMap(n => outputFields(n).map(key => `${n.id}.${key}`)) : [];
 
   return <main className="workspace">
-    <nav className="rail"><a className="brand" href="/" aria-label="MyFlow"><WorkflowIcon size={24} /></a><button className="rail-button active" disabled={locked} title="工作流" onClick={() => setShowWorkflows(v => !v)}><Layers3 size={20} /></button><button className="rail-button" title="运行历史" onClick={() => setTab("history")}><Clock3 size={20} /></button><div className="rail-spacer" /><button className="rail-button" title="模型设置" onClick={() => setShowSettings(true)}><Settings2 size={20} /></button><span className="avatar">M</span></nav>
+    <nav className="rail"><a className="brand" href="/" aria-label="MyFlow"><WorkflowIcon size={24} /></a><button className="rail-button active" disabled={locked} title="工作流" onClick={() => setShowWorkflows(v => !v)}><Layers3 size={20} /></button><button className="rail-button" title="运行历史" onClick={() => setTab("history")}><Clock3 size={20} /></button><a className="rail-button" title="MiniMax 模型试验台" aria-label="MiniMax 模型试验台" href="/models" target="_blank" rel="noreferrer"><FlaskConical size={20} /></a><div className="rail-spacer" /><button className="rail-button" title="模型设置" onClick={() => setShowSettings(true)}><Settings2 size={20} /></button><span className="avatar">M</span></nav>
     <div className="main-area">
       <header className="topbar"><div className="breadcrumb">工作空间 <span>/</span><div className="workflow-menu"><button className="workflow-trigger" onClick={() => setShowWorkflows(v => !v)} disabled={locked}>{workflow?.name || "选择工作流"}<ChevronDown size={14} /></button>{showWorkflows && <div className="dropdown">{workflows.map(w => <button key={w.id} disabled={locked} onClick={() => { if (dirty && !window.confirm("放弃尚未保存的修改？")) return; load(w); setShowWorkflows(false); }}>{w.name}{workflow?.id === w.id && <Check size={14} />}</button>)}<button onClick={create}><Plus size={14} />新建工作流</button>{workflow && <button className="danger-text" onClick={removeWorkflow}><Trash2 size={14} />删除当前工作流</button>}</div>}</div><span className="version">v{workflow?.version || 1}</span></div><div className="topbar-right"><span className={`save-state ${dirty ? "unsaved" : ""}`}>{dirty ? "有未保存的修改" : "所有更改已保存"}</span><button className="button" disabled={locked || !workflow} onClick={saveClick}><Save size={15} />保存</button><button className="button primary" disabled={locked || !workflow} onClick={() => setShowInputs(true)}><Play size={14} fill="currentColor" />运行</button></div></header>
       <div className="editor-heading"><div><span className="eyebrow">THE CREATIVE WORKSPACE</span><h1>让灵感，流动起来<span className="title-dot">.</span></h1><p>连接模型与想法，构建你的 AI 创作流程。</p></div><div className="heading-meta"><span className="live-dot" />{run?.status === "running" ? "正在创作" : "画布已就绪"}<span className="meta-separator" />{graph.nodes.length} 个节点</div></div>
@@ -197,22 +231,22 @@ export default function Editor() {
               <span className="eyebrow">NODE CONFIGURATION</span><div className="node-heading"><span className={`node-icon large ${picked.type}`}>{(() => { const Icon = icons[picked.type]; return <Icon size={23} />; })()}</span><div><h2>{titles[picked.type]}</h2><code>{picked.id}</code></div></div><p className="muted">{registry[picked.type].description}</p>
               <fieldset disabled={locked}><label>节点名称<input value={picked.data.label || ""} onChange={e => updateData("label", e.target.value)} /></label>
               {Object.entries(registry[picked.type].properties).map(([key, property]) => <label key={key}>{property.title}
-                {property.format?.endsWith("-model") ? <select value={picked.data[key] || property.default} onChange={e => updateData(key, e.target.value)}>{models.filter(m => m.kind === (picked.type === "image" ? "image" : "text")).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
+                {property.format?.endsWith("-model") ? <select value={picked.data[key] || property.default} onChange={e => changeModel(e.target.value)}>{models.filter(m => m.kind === property.format?.replace("-model", "")).map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
                 : property.enum ? <select value={picked.data[key] || property.default} onChange={e => updateData(key, e.target.value)}>{property.enum.map(v => <option key={v}>{v}</option>)}</select>
-                : property.format === "textarea" ? <><textarea ref={element => { parameterRefs.current[key] = element; }} value={picked.data[key] || ""} rows={key === "system" ? 3 : 6} onChange={e => { updateData(key, e.target.value); if (e.target.value.slice(0, e.target.selectionStart).endsWith("{")) setReferenceField(key); }} /><button className="reference-trigger" onClick={() => setReferenceField(referenceField === key ? undefined : key)}>＋ 插入上游变量</button>{referenceField === key && <div className="reference-list">{variables.length ? variables.map(v => <button key={v} onClick={() => insertReference(key, v)}><code>{`{{${v}}}`}</code></button>) : <p className="muted small">连接上游节点后可引用变量。</p>}</div>}</>
+                : (property.format === "textarea" || property.format?.endsWith("-file")) ? <><textarea ref={element => { parameterRefs.current[key] = element; }} value={picked.data[key] ?? property.default} aria-label={property.title} rows={property.format?.endsWith("-file") ? 2 : key === "system" ? 3 : 6} onChange={e => { updateData(key, e.target.value); if (e.target.value.slice(0, e.target.selectionStart).endsWith("{")) setReferenceField(key); }} /><button className="reference-trigger" onClick={() => setReferenceField(referenceField === key ? undefined : key)}>＋ 插入上游变量</button>{property.format?.endsWith("-file") && <div className="resource-upload"><input type="file" aria-label={`上传${property.title}`} accept={property.format === "image-file" ? "image/png,image/jpeg,image/webp" : "audio/*"} onChange={e => { const file = e.target.files?.[0]; e.target.value = ""; void uploadResource(key, file); }} /><small className="muted">上传文件或插入上游 .url 变量，最大 20 MB</small></div>}{referenceField === key && <div className="reference-list">{variables.length ? variables.map(v => <button key={v} onClick={() => insertReference(key, v)}><code>{`{{${v}}}`}</code></button>) : <p className="muted small">连接上游节点后可引用变量。</p>}</div>}</>
                 : <input value={picked.data[key] || ""} placeholder={property.default} onChange={e => updateData(key, e.target.value)} />}
               </label>)}
               </fieldset>
               {picked.type === "start" && <div className="tip">用逗号分隔字段名，例如 topic,style。字段名以英文字母开头。</div>}
-              {picked.type === "end" && <div className="tip">自动收集直接上游的文字与图像，作为工作流的最终输出。</div>}
-              {results[picked.id] && <div className="node-detail"><h3>节点运行详情 · {statusNames[results[picked.id].status]}</h3>{results[picked.id].error && <p className="danger-text">{results[picked.id].error}</p>}<Output value={results[picked.id].output ?? results[picked.id].text ?? "等待输出"} /><details><summary>输入 / 用量</summary><pre>{JSON.stringify({ inputs: results[picked.id].inputs, usage: results[picked.id].usage, elapsed_ms: results[picked.id].elapsed_ms }, null, 2)}</pre></details></div>}
+              {picked.type === "end" && <div className="tip">自动收集直接上游的文字、图片、音频和视频，作为工作流的最终输出。</div>}
+              {results[picked.id] && <div className="node-detail"><h3>节点运行详情 · {statusNames[results[picked.id].status]}</h3>{results[picked.id].error && <p className="danger-text">{results[picked.id].error}</p>}<Progress result={results[picked.id]} /><Output value={results[picked.id].output ?? results[picked.id].text ?? "等待输出"} /><details><summary>输入 / 用量</summary><pre>{JSON.stringify({ inputs: results[picked.id].inputs, usage: results[picked.id].usage, elapsed_ms: results[picked.id].elapsed_ms }, null, 2)}</pre></details></div>}
               <button className="delete-node" disabled={locked} onClick={() => { edit({ nodes: graph.nodes.filter(n => n.id !== picked.id), edges: graph.edges.filter(e => e.source !== picked.id && e.target !== picked.id) }); setSelected(undefined); }}><Trash2 size={14} />删除节点</button>
             </> : <div className="empty-panel"><span className="empty-illustration"><WorkflowIcon size={32} strokeWidth={1.3} /></span><h2>从一个想法开始</h2><p>点击画布中的节点，<br />配置模型、提示词和变量。</p><div className="tip">试试直接运行示例工作流。演示模式无需 API Key。</div>{workflow && <label className="workflow-name">工作流名称<input disabled={locked} value={workflow.name} onChange={e => { setWorkflow({ ...workflow, name: e.target.value }); setDirty(true); }} /></label>}</div>)}
             {tab === "run" && (run ? <><div className="run-heading"><span className={`status-pill ${run.status}`}>{run.status === "running" && <LoaderCircle size={12} className="spin" />}{statusNames[run.status] || run.status}</span><span className="muted small">版本 {run.workflow_version}</span></div><p className="muted small">{new Date(run.created_at).toLocaleString("zh-CN")}</p>{connection && <div className="tip">{connection}</div>}{run.error && <div className="notice error">{run.error}</div>}{run.status === "running" && <button className="button full" onClick={stop}><Square size={13} />停止运行</button>}
               {Object.entries(run.outputs || {}).map(([key, value]) => <section className="result-block" key={key}><h3>{viewedGraph.nodes.find(n => n.id === key)?.data.label || key}</h3><Output value={value} /></section>)}
-              {!Object.keys(run.outputs || {}).length && Object.entries(results).filter(([, r]) => r.text || r.output !== undefined).map(([key, result]) => <section className="result-block" key={key}><h3>{viewedGraph.nodes.find(n => n.id === key)?.data.label || key}</h3><Output value={result.output ?? result.text} /></section>)}
+              {!Object.keys(run.outputs || {}).length && Object.entries(results).filter(([, r]) => r.text || r.output !== undefined || r.task_id).map(([key, result]) => <section className="result-block" key={key}><h3>{viewedGraph.nodes.find(n => n.id === key)?.data.label || key}</h3><Progress result={result} /><Output value={result.output ?? result.text ?? "等待输出"} /></section>)}
               <details className="run-inputs"><summary>本次运行输入</summary><pre>{JSON.stringify(run.inputs, null, 2)}</pre></details>
-            </> : <div className="empty-panel"><Play size={30} strokeWidth={1.3} /><h2>等待下一次创作</h2><p>点击右上角「运行」，<br />在这里查看文字和图像输出。</p></div>)}
+            </> : <div className="empty-panel"><Play size={30} strokeWidth={1.3} /><h2>等待下一次创作</h2><p>点击右上角「运行」，<br />在这里查看文字、图片、音频和视频。</p></div>)}
             {tab === "history" && <><span className="eyebrow">RECENT RUNS · 最近 50 次</span><h2>创作的每一步</h2><p className="muted small">点击记录回放当时的画布与节点结果。</p>{!history.length && <div className="tip">运行工作流后，记录会出现在这里。</div>}{history.map(item => <button disabled={busy || run?.status === "running"} key={item.id} className="history-item" onClick={() => replay(item)}><div><span className={`status-pill ${item.status}`}>{statusNames[item.status] || item.status}</span><span className="muted small">v{item.workflow_version}</span></div><strong>{Object.values(item.inputs).join(" · ").slice(0, 50)}</strong><span className="muted small">{new Date(item.created_at).toLocaleString("zh-CN")}</span></button>)}</>}
           </div>
           <div className="inspector-footer"><span className="live-dot" />本地创作空间 <button className="text-button" onClick={() => setShowSettings(true)}>模型设置 <ArrowUpRight size={12} /></button></div>

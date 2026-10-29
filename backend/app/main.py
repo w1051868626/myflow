@@ -3,10 +3,13 @@ import json
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import JsonValue
 from sqlalchemy import select, update
+
+from app.artifacts import upload
 
 from app.engine.executor import TASKS, launch
 from app.engine.graph import input_fields, validate_graph
@@ -14,7 +17,9 @@ from app.examples import example_graph
 from app.models import Base, DATA_DIR, Event, Run, Session, Workflow, emit, engine, now, run_dict
 from app.nodes.registry import NODE_REGISTRY
 from app.providers.client import catalog, cipher, provider_setting, save_provider
-from app.schemas import EventsRequest, Graph, IdRequest, ProviderWrite, WorkflowRun, WorkflowSave, WorkflowWrite
+from app.providers.minimax import check_report, presets, query_video, request_json, trial
+from app.providers.types import RequestOptions
+from app.schemas import ArtifactUpload, EventsRequest, Graph, IdRequest, ModelTrial, ProviderRead, ProviderWrite, VideoQuery, WorkflowRun, WorkflowSave, WorkflowWrite
 
 
 @asynccontextmanager
@@ -72,20 +77,50 @@ def node_types():
     return NODE_REGISTRY
 
 
+@app.post("/api/artifacts/upload", status_code=201)
+def upload_artifact(body: ArtifactUpload):
+    return upload(body.file_name, body.file_base64)
+
+
 @app.post("/api/models")
 def models():
     return catalog()
 
 
+@app.post("/api/minimax/catalog")
+def minimax_catalog():
+    return presets()
+
+
+@app.post("/api/minimax/checks")
+def minimax_checks():
+    return check_report()
+
+
+@app.post("/api/minimax/discover")
+async def minimax_discover() -> dict[str, JsonValue]:
+    return await request_json("minimax_text", "v1", "models", RequestOptions(method="GET"))
+
+
+@app.post("/api/minimax/trial")
+async def minimax_trial(body: ModelTrial):
+    return await trial(body.model, body.payload, body.file_base64, body.file_name)
+
+
+@app.post("/api/minimax/video/query")
+async def minimax_video_query(body: VideoQuery):
+    return await query_video(body.task_id, body.api_version)
+
+
 @app.post("/api/provider/get")
-def provider():
-    return provider_setting()
+def provider(body: ProviderRead = Body(default=ProviderRead())):
+    return provider_setting(body.provider)
 
 
 @app.post("/api/provider/save")
 def configure(body: ProviderWrite):
-    save_provider(body.base_url, body.api_key)
-    return provider_setting()
+    save_provider(body.base_url, body.api_key, body.provider)
+    return provider_setting(body.provider)
 
 
 @app.post("/api/workflows/list")

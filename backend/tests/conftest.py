@@ -20,3 +20,18 @@ def pytest_sessionfinish(session, exitstatus):
 def client():
     with TestClient(app) as client:
         yield client
+
+
+@pytest.fixture(autouse=True)
+def block_real_provider_http(monkeypatch):
+    """Standard acceptance never sends HTTPX requests to a real provider."""
+    import httpx
+
+    def blocked(*args, **kwargs):
+        raise AssertionError('Real HTTP is disabled in tests; use httpx.MockTransport')
+
+    async def blocked_async(*args, **kwargs):
+        blocked()
+
+    monkeypatch.setattr(httpx.HTTPTransport, 'handle_request', blocked)
+    monkeypatch.setattr(httpx.AsyncHTTPTransport, 'handle_async_request', blocked_async)

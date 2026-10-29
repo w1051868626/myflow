@@ -42,6 +42,14 @@
 
 ## 验收入口
 
+### 边界补充验收（GRAPH-001、REF-001、LAB-001）
+
+- 草稿可保留无关配置字段，但运行时所有已声明属性及旧版提示词字段必须为文本；错误返回 422，不创建运行记录，也不能返回 500。
+- 媒体节点实际解析的全部配置属性（包括 model、voice_id、speed、duration 等）均检查变量语法、字段及上游关系；未连接分支即使已完成也不能引用。合法的已连接上游变量继续可用。
+- 试验台在调用上游前验证各能力的必要输入及已知参数：文本 messages 非空；图片 prompt 非空；语音 text 为非空且少于 10000 字符，voice_setting 为对象且 speed 在 0.5–2；音乐参考音频及歌词条件有效；视频内容非空、时长和分辨率遵守工作流已有模型限制。布尔值不能作为数字，错误类型、空白值和非有限数值拒绝。
+- 可选参数未传时保留供应商默认行为；未知扩展参数继续透传，不将此验证描述为覆盖供应商全部参数。非法请求返回 422，且无上游请求、无生成文件。ASR 文件必须为合法 Base64、非空且不超过 20 MiB。
+- 自动化证据：`test_contracts.py` 的 `test_ref_001_media_properties_reject_invalid_references`、`test_graph_001_non_string_legacy_property_is_rejected`；`test_minimax.py` 的 `test_lab_001_invalid_parameters_have_no_side_effects`。
+
 本节记录可用的验收方式；是否编写或执行测试以用户授权为准。仅要求输出或修改规范时，不执行这些命令。
 
 图校验补充用例为 `test_contracts.py::test_graph_001_invalid_draft_never_creates_a_run`，验证重复连线、自环、悬空端点、开始/输出方向、开始/输出数量、孤立节点及重复字段；游标补充用例为 `test_contracts.py::test_sse_001_cursor_is_exclusive_and_terminal_cursor_closes_stream`。
@@ -121,6 +129,8 @@ python scripts/verify.py --python C:/path/to/python.exe
 - 优先减少嵌套和重复条件；不为了降低单个函数的指标，把复杂度转移到难以理解的表达式、递归或大量零散函数中。
 - UI 组件中的业务计算和副作用应与展示结构合理分离；JSX 标签层级不计入控制流嵌套深度。
 - 生成文件、声明文件及纯静态数据不适用函数规模限制；框架固定接口、兼容接口及其他必要例外应逐项记录原因、影响和适用范围，不设笼统豁免。
+
+供应商适配器的 method、payload、params、files 使用有类型的请求选项组织；内部签名调整时同步更新调用者和隔离测试。HTTP 路由、生成请求体、查询参数及单次生成行为保持 LAB-001、VIDEO-001 契约。工作流与试验台共用视频时长及分辨率规则，避免两处规则漂移。
 
 ### CODE-005：可维护性与验收说明
 

@@ -6,7 +6,7 @@ import {
   useNodesState, useEdgesState,
   type Connection, type Edge, type NodeChange, type ReactFlowInstance,
 } from "@xyflow/react";
-import { ancestors, type Graph, type NodeResult } from "@/api/client";
+import { ancestors, mediaTargets, type Graph, type NodeResult } from "@/api/client";
 import FlowCard, { type CardNode } from "./FlowCard";
 import { reconcileNodes, withCanvasPositions } from "./state";
 
@@ -52,7 +52,7 @@ function Canvas({ graph, results, selected, locked, running, onChange, onSelect,
   const valid = useCallback((connection: Connection | Edge) => {
     const a = graph.nodes.find(node => node.id === connection.source);
     const b = graph.nodes.find(node => node.id === connection.target);
-    if (!a || !b || a.id === b.id || a.type === "end" || b.type === "start" || (a.type === "image" && b.type !== "end")) return false;
+    if (!a || !b || a.id === b.id || a.type === "end" || b.type === "start" || (mediaTargets[a.type] && !mediaTargets[a.type]?.includes(b.type))) return false;
     if (graph.edges.some(edge => edge.source === a.id && edge.target === b.id)) return false;
     return !ancestors(a.id, graph).some(node => node.id === b.id);
   }, [graph]);

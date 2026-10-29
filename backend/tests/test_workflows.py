@@ -20,7 +20,7 @@ def test_restart_marks_unfinished_run_interrupted(client):
     from app.main import app
 
     with Session.begin() as db:
-        db.add(Run(id="interrupted-test", status="running", graph=example_graph(), inputs={}))
+        db.add(Run(id="interrupted-test", status="running", graph=example_graph(demo=True), inputs={}))
     with TestClient(app) as restarted:
         assert restarted.post("/api/runs/get", json={"id": "interrupted-test"}).json()["status"] == "interrupted"
         replay = events(restarted, "interrupted-test")
@@ -29,7 +29,7 @@ def test_restart_marks_unfinished_run_interrupted(client):
 
 
 def workflow(client, graph=None):
-    response = client.post("/api/workflows", json={"name": "测试创作", "graph": graph or example_graph()})
+    response = client.post("/api/workflows", json={"name": "测试创作", "graph": graph or example_graph(demo=True)})
     assert response.status_code == 201
     return response.json()
 
@@ -113,7 +113,7 @@ def test_optimistic_save_and_snapshot(client):
     lambda g: g["nodes"][1]["data"].update(prompt="{{start.topic"),
 ])
 def test_rejects_invalid_graphs(client, mutation):
-    graph = example_graph()
+    graph = example_graph(demo=True)
     mutation(graph)
     with pytest.raises(ValueError):
         validate_graph(Graph.model_validate(graph))
@@ -127,7 +127,7 @@ def test_required_inputs_and_provider_key(client):
     assert "private-test-key" not in response.text
     assert client.post("/api/provider/get").json()["configured"]
     with Session() as db:
-        assert "private-test-key" not in db.get(Setting, "openai").encrypted_key
+        assert "private-test-key" not in db.get(Setting, "deepseek").encrypted_key
     assert client.post("/api/provider/save", json={"base_url": "file:///etc", "api_key": ""}).status_code == 422
 
 
@@ -139,7 +139,7 @@ def test_cancel_running_task(client):
 
 
 def test_failing_model_ends_run(client):
-    graph = example_graph()
+    graph = example_graph(demo=True)
     graph["nodes"][1]["data"]["model"] = "nonexistent"
     w = workflow(client, graph)
     run = client.post("/api/workflows/runs", json={"id": w["id"], "inputs": {"topic": "错误"}}).json()
@@ -177,22 +177,85 @@ def test_ready_queue_does_not_wait_for_unrelated_branch(client, monkeypatch):
     asyncio.run(check())
 
 
-def test_openai_stream_adapter(client, monkeypatch):
+def test_deepseek_stream_adapter(client, monkeypatch):
     client.post("/api/provider/save", json={"base_url": "https://example.com/v1", "api_key": "test-key"})
     real_client = httpx.AsyncClient
 
     def handler(request):
         assert request.headers["authorization"] == "Bearer test-key"
         assert request.url.path == "/v1/chat/completions"
+        payload = json.loads(request.content)
+        assert payload["model"] == "deepseek-flash"
+        assert payload["thinking"] == {"type": "disabled"}
+        assert payload["stream"] is True
         return httpx.Response(200, text='data: {"choices":[{"delta":{"content":"hello"}}]}\n\ndata: {"choices":[],"usage":{"total_tokens":3}}\n\ndata: [DONE]\n\n')
 
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
 
     async def check():
-        chunks = [chunk async for chunk in Provider("gpt-4o-mini", "text").chat("system", "prompt")]
+        chunks = [chunk async for chunk in Provider("deepseek-flash", "text").chat("system", "prompt")]
         assert "".join(c["text"] for c in chunks) == "hello"
         assert chunks[-1]["usage"]["total_tokens"] == 3
     asyncio.run(check())
+
+
+def test_provider_connections_are_independent_and_keys_stay_private(client):
+    for provider, url in [("deepseek", "https://api.deepseek.com"), ("minimax", "https://api.minimax.cn/v1")]:
+        response = client.post("/api/provider/save", json={"provider": provider, "base_url": url, "api_key": f"private-{provider}"})
+        assert response.status_code == 200
+        assert f"private-{provider}" not in response.text
+        response = client.post("/api/provider/get", json={"provider": provider})
+        assert response.json() == {"provider": provider, "base_url": url, "configured": True}
+        assert f"private-{provider}" not in response.text
+        client.post("/api/provider/save", json={"provider": provider, "base_url": url, "api_key": ""})
+    assert Provider("deepseek-flash", "text").key == "private-deepseek"
+    assert Provider("image-01", "image").key == "private-minimax"
+    assert client.post("/api/provider/save", json={"provider": "unknown", "base_url": "https://example.com"}).status_code == 422
+
+
+@pytest.mark.parametrize("size,dimensions", [("1024x1024", (1024, 1024)), ("1536x1024", (1536, 1024)), ("1024x1536", (1024, 1536))])
+def test_minimax_adapter_persists_generated_image(client, monkeypatch, size, dimensions):
+    import base64
+    from app.models import DATA_DIR
+
+    client.post("/api/provider/save", json={"provider": "minimax", "base_url": "https://api.minimax.cn/v1", "api_key": "image-key"})
+    real_client = httpx.AsyncClient
+    content = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a5S8AAAAASUVORK5CYII=")
+
+    def handler(request):
+        assert request.method == "POST"
+        assert str(request.url) == "https://api.minimax.cn/v1/image_generation"
+        assert request.headers["authorization"] == "Bearer image-key"
+        payload = json.loads(request.content)
+        assert payload == {"model": "image-01", "prompt": "一杯咖啡", "width": dimensions[0], "height": dimensions[1], "response_format": "base64", "n": 1}
+        return httpx.Response(200, json={"base_resp": {"status_code": 0}, "data": {"image_base64": [base64.b64encode(content).decode()]}})
+
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(handler), **kw))
+    image = asyncio.run(Provider("image-01", "image").text2img("一杯咖啡", size))
+    assert image["url"].startswith("/artifacts/")
+    assert (DATA_DIR / "artifacts" / image["url"].split("/")[-1]).read_bytes() == content
+    assert client.get(image["url"]).status_code == 200
+
+
+@pytest.mark.parametrize("result,expected", [
+    ({"base_resp": {"status_code": 1008}, "data": {}}, "错误码 1008"),
+    ({"base_resp": {"status_code": 0}, "data": {}}, "未返回有效图片"),
+])
+def test_minimax_business_errors_do_not_look_like_success(client, monkeypatch, result, expected):
+    client.post("/api/provider/save", json={"provider": "minimax", "base_url": "https://api.minimax.cn/v1", "api_key": "image-key"})
+    real_client = httpx.AsyncClient
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: real_client(transport=httpx.MockTransport(lambda request: httpx.Response(200, json=result)), **kw))
+    with pytest.raises(ValueError, match=expected):
+        asyncio.run(Provider("image-01", "image").text2img("咖啡", "1024x1024"))
+
+
+def test_new_workflows_and_node_defaults_use_requested_models(client):
+    graph = example_graph()
+    assert graph["nodes"][1]["data"]["model"] == "deepseek-flash"
+    assert graph["nodes"][2]["data"]["model"] == "image-01"
+    registry = client.post("/api/nodes").json()
+    assert registry["llm"]["properties"]["model"]["default"] == "deepseek-flash"
+    assert registry["image"]["properties"]["model"]["default"] == "image-01"
 
 
 def test_template_missing_variable_is_error():

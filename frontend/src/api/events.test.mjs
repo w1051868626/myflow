@@ -75,3 +75,26 @@ test("closing a subscription aborts its in-flight request without reconnecting",
   subscription.close();
   assert.equal(signal.aborted, true);
 });
+
+test("SSE-002 stream_closed ends the subscription without reconnecting", { timeout: 5000 }, async t => {
+  const requests = [];
+  t.mock.method(globalThis, "fetch", async (_url, options) => {
+    requests.push(options);
+    return new Response(body('data: {"type":"stream_closed","data":{"status":"succeeded"}}\n\n'));
+  });
+  const received = [];
+  let subscription;
+  try {
+    await new Promise(resolve => {
+      subscription = subscribeRun("completed-run", event => {
+        received.push(event.type);
+        resolve();
+      }, () => {});
+    });
+    assert.deepEqual(received, ["stream_closed"]);
+    assert.equal(requests[0].signal.aborted, true);
+    // Wait beyond the existing one-second reconnect interval to catch a retry.
+    await new Promise(resolve => setTimeout(resolve, 1100));
+    assert.equal(requests.length, 1);
+  } finally { subscription?.close(); }
+});

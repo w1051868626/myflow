@@ -14,7 +14,7 @@
 docker compose up --build -d
 ```
 
-打开 [http://localhost:3000](http://localhost:3000)，直接运行预置的「从灵感到图文」工作流。默认使用演示模型，无需 API Key。演示文本是固定规则生成，演示配图是本地 SVG，界面会显示演示标记。
+打开 [http://localhost:3000](http://localhost:3000)，在左下角设置中分别保存 DeepSeek 和 MiniMax 的 API Key，再运行预置的「从灵感到图文」工作流。新预置工作流默认使用 DeepSeek 生成文本、MiniMax 生成图像。也可在两个节点中选择演示模型，无需 API Key；演示文本是固定规则生成，演示配图是本地 SVG，界面会显示演示标记。
 
 ```sh
 docker compose logs -f
@@ -25,23 +25,83 @@ docker compose down
 
 ## 连接真实模型
 
-1. 点击左下角设置按钮，填写 OpenAI 兼容服务的 Base URL（例如 `https://api.openai.com/v1`）和 API Key。
-2. 在节点配置中切换到真实模型。
-3. 其他供应商或模型可在 `backend/models.yaml` 添加，`id` 必须与供应商接受的模型名一致。Compose 已挂载这个文件，修改后刷新页面即可。
+1. 点击左下角设置按钮，选择「DeepSeek · 文本」，使用默认 Base URL `https://api.deepseek.com` 并保存 DeepSeek API Key。
+2. 切换到「MiniMax · 图像」，使用默认 Base URL `https://api.minimax.cn/v1` 并保存 MiniMax API Key。两家连接独立存储，密钥不会混用。
+3. 文本节点选择 `DeepSeek Flash`（`deepseek-flash`），图像节点选择 `MiniMax Image-01`（`image-01`）。新节点与新预置工作流默认使用这两个模型；已有工作流和历史快照保留原选择，需在节点面板中切换并保存。
+4. 其他模型可在 `backend/models.yaml` 添加，`id` 必须与供应商接受的模型名一致。Compose 已挂载这个文件，修改后刷新页面即可。支持 `deepseek`、`minimax`、`minimax_text`、`openai` 和 `demo` 供应商。
 
 ```yaml
 models:
-  - id: your-model-id
-    name: 我的文本模型
+  - id: deepseek-flash
+    name: DeepSeek Flash
     kind: text          # text 或 image
-    provider: openai    # OpenAI 兼容接口
+    provider: deepseek  # 独立使用 DeepSeek 连接
 ```
 
-当前支持一个 OpenAI 兼容连接，模型列表中的真实模型共享这组地址与密钥。文本使用 `/chat/completions` 流式接口及 `stream_options.include_usage`，图像使用 `/images/generations`，要求接受 `model/prompt/size/n`。供应商的专有图像协议需要额外适配。默认真实模型名称仅用于配置示例，可用性与费用以供应商为准。
+DeepSeek 文本使用 `/chat/completions` 流式接口，默认关闭深度思考以直接输出创作文案。MiniMax 图像使用 `/image_generation`，将节点尺寸转换为 `width/height`，请求 base64 并将图片保存到本地 `/artifacts/`；画面描述最多 1500 字符。接口的业务错误码也会作为运行失败处理。
+
+官方接口参考：[DeepSeek](https://api-docs.deepseek.com/)、[MiniMax 文生图](https://platform.minimax.cn/docs/api-reference/image-generation-t2i)。旧的 `openai` 加密配置仍保留，可通过 `/api/provider/get`、`/api/provider/save` 的 `provider: "openai"` 管理；不会自动复制到新的两家服务。
 
 API Key 使用 Fernet 加密，不会通过读取接口返回。首次启动自动生成 `data/encryption.key`；请连同数据库备份，丢失密钥后需重新配置 API Key。设置页中密钥留空会保留已存密钥。也可通过环境变量 `MYFLOW_ENCRYPTION_KEY` 指定有效的 Fernet 密钥；Compose 使用时需自行在 backend 服务中传入该变量。
 
+### MiniMax 模型试验台
+
+打开 [http://localhost:3000/models](http://localhost:3000/models)，或点击工作流左侧的试管图标。试验台提供模型切换、JSON payload 编辑、资源预览、视频任务查询与账户模型查询；每次试用只发送当前模型的一次生成请求，不会自动重试生成。文本、图片、语音、音乐、视频和语音识别同时可在工作流节点使用。
+
+| 能力 | 试验目录 |
+| --- | --- |
+| 文本（10） | M3.1 Flash、M3、M2.7 / M2.5 / M2.1 及各自 Highspeed、M2、M2-her |
+| 图片（2） | Image-01、Image-01 Live；Live 使用宽高比参数 |
+| 语音合成（8） | Speech 2.8 / 2.6 / 02 / 01，各含 HD、Turbo |
+| 音乐（6） | Music 3.0、2.6、Cover，各含 Free 变体 |
+| 视频（13） | H3 / Highspeed / Lite / Max、Hailuo 2.3 / 02 / 2.3 Fast、T2V-01 / Director、I2V-01 / Director / Live、S2V-01 |
+| 语音识别（1） | ASR 1.0；通过 JSON 中的 Base64 文件转为供应商 multipart 请求，试验台上传上限 20 MB |
+
+目录包含历史型号，列出不代表账户仍可调用；请以真实响应为准。部分 M2 型号虽仍出现在官方账户模型列表中，实际调用已返回不可用；音乐 API 对新账户可能返回 HTTP 410。参考官方[接口目录](https://platform.minimax.cn/docs/llms.txt)、[文本调试台](https://solutions.minimax.cn/debug/text)、[语音调试台](https://solutions.minimax.cn/debug/speech)。
+
+MiniMax 多模态连接使用按量 API Key。需要 M Plan Key 的文本模型可在设置中填写「MiniMax · 文本专用（可选）」（`provider: "minimax_text"`），未配置时复用 `minimax`。历史型号是否开放、限免版本是否可用均由供应商账户决定。
+
+所有业务请求仍为 POST，ID 等参数在 JSON 中：
+
+| 地址 | payload / 用途 |
+| --- | --- |
+| `/api/minimax/catalog` | `{}`：模型及示例 payload，不调用供应商 |
+| `/api/minimax/discover` | `{}`：从供应商获取当前密钥可见的文本模型 |
+| `/api/minimax/trial` | `{"model":"image-01","payload":{"prompt":"一杯咖啡","aspect_ratio":"1:1","n":1,"response_format":"base64"}}` |
+| `/api/minimax/video/query` | `{"task_id":"任务ID","api_version":"v2"}`；H3 用 v2，Hailuo/T2V/I2V/S2V 用 v1 |
+| `/api/minimax/checks` | `{}`：读取本机最近一次批量实测报告，未运行过则为空 |
+
+图片 Base64 和音频 hex 会保存到 `/artifacts/`；供应商返回的视频等 URL 为临时链接。图生图、视频参考图/音频等高级输入可直接按所选模型官方文档补入 JSON。翻唱需 `audio_url` / `audio_base64` / `cover_feature_id`；图生视频需 `first_frame_image`，S2V 需 `subject_reference`。语音识别在试验台上传文件即可。音色复刻、音色设计及视频 Agent 等专项工具不属于本次模型试验入口。
+
+批量真实试调脚本（使用本地已加密保存的密钥，会按供应商计费）：
+
+```powershell
+conda activate myflow
+python -X utf8 scripts/check_minimax_models.py
+# 只重试被 RPM 限流的请求，并查询未完成的视频，不重复生成已成功条目
+python -X utf8 scripts/check_minimax_models.py --resume
+```
+
+结果保存在 `docs/minimax-model-check.json`，包含每款模型的状态、耗时、输出资源和视频任务 ID，不含密钥。该本机生成文件已被 Git 忽略。试验台的「载入批量实测」可预览结果。新部署不会自动执行付费试调；Docker 镜像不包含本机实测文件。
+
 ## 使用画布
+
+画布支持开始、文本生成、图像生成、语音合成、音乐生成、视频生成、语音识别、模板拼接和输出共九类节点。
+
+| 新节点 | 配置与连接 |
+| --- | --- |
+| 语音合成 | 选择 Speech 模型、音色 ID 和语速，朗读文本可引用上游；输出本地音频 |
+| 音乐生成 | 配置风格、歌词或纯音乐；Cover 模型可上传参考音频，或引用上游音频 URL |
+| 视频生成 | 选择模型、时长、分辨率和等待时限；可上传首帧 / 人物参考图，或引用图像节点；完成后输出视频链接 |
+| 语音识别 | 上传音频，或引用上游语音 / 音乐的本地资源；识别文本可继续交给文本、模板等节点 |
+
+例如：`开始 → 语音合成 → 语音识别 → 模板 → 输出`，以及 `开始 → 图像生成 → 视频生成 → 输出`。媒体节点用 `{{节点ID.url}}` 引用资源，文本 / 识别节点用 `{{节点ID.output}}` 引用文本。通过连线建立依赖后，参数框中的「插入上游变量」会列出可用字段。
+
+资源上传使用 `POST /api/artifacts/upload`，payload 为 `{"file_name":"audio.mp3","file_base64":"…"}`；音频和图片最大 20 MB。资源保存在数据目录，工作流仅保存 URL，不将 Base64 写入图快照。识别节点读取本地已上传或已生成的音频，不从任意远程地址下载文件；视频输入图片会将本地资源转换为供应商可读取的 Data URL。
+
+视频节点仅提交一次生成任务，随后查询状态；任务 ID 会显示在节点运行详情中，并可跳转试验台继续查询。切换视频模型时自动调整默认时长和分辨率，仍需满足各模型的输入要求。超时、连续查询错误或取消运行会停止本地等待，上游任务可能继续；请凭已有任务 ID 查询，避免重复生成。音乐等模型的供应商开放限制仍然适用。
+
+可运行 `python -X utf8 scripts/check_media_workflow.py` 创建独立的「多模态节点验证：语音识别与图生视频」工作流并真实调用语音、识别、图片和视频模型。它使用已有连接，会产生供应商调用费用；本机结果写入已被 Git 忽略的 `docs/media-workflow-check.json`。
 
 - 点击底部节点按钮添加，或将它拖到画布中。从节点右侧圆点拖向下游节点左侧圆点完成连线。
 - 点击节点，在右侧配置模型和提示词。点击空白区域可修改工作流名称。
@@ -61,8 +121,8 @@ API Key 使用 Fernet 加密，不会通过读取接口返回。首次启动自�
 | 操作 | POST 地址 | payload |
 | --- | --- | --- |
 | 健康检查、节点定义、模型列表 | `/api/health`、`/api/nodes`、`/api/models` | `{}` |
-| 读取模型连接 | `/api/provider/get` | `{}` |
-| 保存模型连接 | `/api/provider/save` | `{"base_url":"https://example.com/v1","api_key":"…"}` |
+| 读取模型连接 | `/api/provider/get` | `{"provider":"deepseek"}` 或 `{"provider":"minimax"}` |
+| 保存模型连接 | `/api/provider/save` | `{"provider":"deepseek","base_url":"https://api.deepseek.com","api_key":"…"}`（MiniMax 使用 `provider:"minimax"` 及其地址与密钥） |
 | 工作流列表 | `/api/workflows/list` | `{}` |
 | 创建工作流 | `/api/workflows` | `{"name":"名称","graph":{"nodes":[],"edges":[]}}` |
 | 读取工作流 | `/api/workflows/get` | `{"id":"工作流ID"}` |
@@ -175,6 +235,10 @@ pnpm build
 在 `backend/` 中运行 `python -m venv .venv`，激活后执行 `python -m pip install -r requirements-dev.txt`，再按上述方式启动后端。Windows PowerShell 激活命令为 `.venv\Scripts\Activate.ps1`，macOS/Linux 为 `source .venv/bin/activate`。前端工具和启动步骤相同。
 
 ## 当前边界
+
+### 行为规范与统一验收
+
+项目行为、测试映射及覆盖边界见 [SPEC.md](SPEC.md)，后续开发遵循 [AGENTS.md](AGENTS.md)。安装开发依赖后，在根目录运行 `python scripts/verify.py`，依次检查后端测试、前端测试、类型和生产构建；任一步失败即返回非零。终端无 Python 时可用 `.\backend\.venv\Scripts\python.exe scripts/verify.py`，也可通过 `--python` 指定后端解释器。验收使用临时数据和模拟供应商，不运行付费试调脚本；浏览器人工验收项单独列在规范中。
 
 这是单机、单用户 MVP，默认仅通过本机 `127.0.0.1:3000` 访问，未提供登录鉴权。后端依靠进程内 asyncio 调度，必须使用一个 Uvicorn worker。每次运行中的独立节点最多并发执行 4 个；失败会取消同次运行的其他任务，并记录未执行节点。服务重启后，未完成运行会标记为中断，可以重新发起。
 

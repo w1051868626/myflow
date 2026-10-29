@@ -1,22 +1,61 @@
+from collections.abc import Mapping
 import re
 
-from app.schemas import Graph
+from app.schemas import Graph, Node
+from app.nodes.registry import NODE_REGISTRY
 
 REFERENCE = re.compile(r"{{\s*([a-zA-Z][a-zA-Z0-9_]*)\.([a-zA-Z][a-zA-Z0-9_]*)\s*}}")
 FIELD_NAME = re.compile(r"^[a-zA-Z][a-zA-Z0-9_]*$")
+MEDIA_TARGETS = {
+    "image": {"video", "end"},
+    "speech": {"asr", "music", "end"},
+    "music": {"asr", "music", "end"},
+    "video": {"end"},
+}
+LEGACY_TEMPLATES = {"system", "prompt", "template", "lyrics", "audio_url", "image_url"}
+MEDIA_NODES = {"speech", "music", "video", "asr"}
 
 
-def input_fields(node):
+def input_fields(node: Node) -> list[str]:
     raw = node.data.get("fields", "topic")
     if not isinstance(raw, str):
         raise ValueError("开始节点的 fields 必须是文本")
     fields = [s.strip() for s in raw.split(",") if s.strip()]
-    if not fields or len(fields) != len(set(fields)) or any(not FIELD_NAME.fullmatch(s) or s == "output" for s in fields):
+    invalid_names = any(not FIELD_NAME.fullmatch(s) or s == "output" for s in fields)
+    if not fields or len(fields) != len(set(fields)) or invalid_names:
         raise ValueError("开始节点输入字段必须唯一，使用英文字母、数字或下划线，且不能为 output")
     return fields
 
 
-def validate_graph(graph: Graph):
+def validate_references(
+    node: Node, nodes: dict[str, Node], ancestors: set[str], fields: list[str],
+) -> None:
+    properties = NODE_REGISTRY[node.type]["properties"]
+    keys = LEGACY_TEMPLATES | set(properties) | {"label"}
+    for key in keys:
+        if key in node.data and not isinstance(node.data[key], str):
+            raise ValueError(f"节点 {node.id} 的 {key} 必须是文本")
+    rendered = LEGACY_TEMPLATES | (set(properties) if node.type in MEDIA_NODES else set())
+    for key in rendered:
+        value = node.data.get(key, "")
+        remainder = REFERENCE.sub("", value)
+        if "{{" in remainder or "}}" in remainder:
+            raise ValueError(f"节点 {node.id} 的变量格式应为 {{{{node.output}}}}")
+        for source, field in REFERENCE.findall(value):
+            if source not in ancestors:
+                raise ValueError(f"{node.id} 只能引用已连接的上游节点：{source}")
+            allowed = reference_fields(nodes[source], fields)
+            if field not in allowed:
+                raise ValueError(f"不支持的变量：{source}.{field}，媒体资源请引用 .url")
+
+
+def reference_fields(node: Node, fields: list[str]) -> list[str]:
+    if node.type == "start":
+        return fields + ["output"]
+    return ["url"] if node.type in MEDIA_TARGETS else ["output"]
+
+
+def validate_graph(graph: Graph) -> tuple[dict[str, Node], dict[str, set[str]], dict[str, set[str]]]:
     nodes = {node.id: node for node in graph.nodes}
     if len(nodes) != len(graph.nodes):
         raise ValueError("节点 ID 不能重复")
@@ -38,8 +77,8 @@ def validate_graph(graph: Graph):
         src, dst = nodes[edge.source], nodes[edge.target]
         if src.type == "end" or dst.type == "start" or src.id == dst.id:
             raise ValueError("开始节点只能输出，结束节点只能接收，节点不能连接自身")
-        if src.type == "image" and dst.type != "end":
-            raise ValueError("MVP 的图像输出只能接到输出节点")
+        if src.type in MEDIA_TARGETS and dst.type not in MEDIA_TARGETS[src.type]:
+            raise ValueError(f"{NODE_REGISTRY[src.type]['title']}不能连接到{NODE_REGISTRY[dst.type]['title']}")
         parents[dst.id].add(src.id)
         children[src.id].add(dst.id)
     remaining = {key: len(value) for key, value in parents.items()}
@@ -60,24 +99,12 @@ def validate_graph(graph: Graph):
             raise ValueError(f"节点 {node.id} 无法从开始节点到达")
         if node.id != ends[0].id and node.id not in ancestors[ends[0].id]:
             raise ValueError(f"节点 {node.id} 未连接到输出节点")
-        for key in ("fields", "system", "prompt", "template", "model", "size"):
-            if key in node.data and not isinstance(node.data[key], str):
-                raise ValueError(f"节点 {node.id} 的 {key} 必须是文本")
-        for key in ("system", "prompt", "template"):
-            value = node.data.get(key, "")
-            if "{{" in REFERENCE.sub("", value) or "}}" in REFERENCE.sub("", value):
-                raise ValueError(f"节点 {node.id} 的变量格式应为 {{{{node.output}}}}")
-            for source, field in REFERENCE.findall(value):
-                if source not in ancestors[node.id]:
-                    raise ValueError(f"{node.id} 只能引用已连接的上游节点：{source}")
-                allowed = fields + ["output"] if nodes[source].type == "start" else ["output"]
-                if field not in allowed or nodes[source].type == "image":
-                    raise ValueError(f"不支持的文本变量：{source}.{field}")
+        validate_references(node, nodes, ancestors[node.id], fields)
     return nodes, parents, children
 
 
-def render(template, context):
-    def replace(match):
+def render(template: str, context: Mapping[str, Mapping[str, object]]) -> str:
+    def replace(match: re.Match[str]) -> str:
         source, field = match.groups()
         if source not in context or field not in context[source]:
             raise ValueError(f"变量不存在：{source}.{field}")
