@@ -75,7 +75,7 @@ python scripts/verify.py --python C:/path/to/python.exe
 
 脚本依次运行完整 pytest、前端测试、TypeScript 检查和生产构建；任一步失败返回非零，不能把局部通过写成验收通过。脚本自动优先使用项目 `.conda`，其次 `backend/.venv`，最后使用启动脚本的 Python。前端通过 Node 24 的 `--run` 执行已有 package scripts，依赖安装仍按 pnpm 锁文件进行。
 
-后端测试使用独立临时数据库、文件目录和测试密钥；HTTPX 默认真实传输被测试夹具阻止，供应商测试使用 MockTransport。统一验收不执行 `check_minimax_models.py` 或 `check_media_workflow.py`。付费实测需要用户明确要求，测试通过不能证明供应商账户权限、余额或当前模型开放情况。
+所有单元、集成、端到端及浏览器测试仅使用独立临时数据库、文件目录、假 key、演示模型和 mock 供应商；不得读取、复用或发送开发者真实模型 key，也不得通过已配置真实 key 的开发服务间接调用模型。HTTPX 默认真实传输被测试夹具阻止，供应商测试使用 MockTransport。测试不得调用真实模型，无论是否收费；不执行 `check_minimax_models.py`、`check_media_workflow.py` 等真实调用脚本，不轮询真实生成任务。测试通过不能证明供应商账户权限、余额或当前模型开放情况。
 
 ## 人工验收与覆盖边界
 
