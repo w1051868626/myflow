@@ -56,32 +56,80 @@ API Key 使用 Fernet 加密，不会通过读取接口返回。首次启动自�
 
 ## 本地开发
 
-需要 Python 3.12+、Node.js 22+ 和 pnpm 10。
+项目使用 Node.js 24.19.0（根目录 `.nvmrc`）、Python 3.12 和 pnpm 10.18.3（`frontend/package.json`）。Docker 同样使用 Node.js 24 系列。
 
-后端：
+### 首次准备：nvm + Conda
 
-```sh
-cd backend
-python -m venv .venv
-# macOS / Linux
-source .venv/bin/activate
-# Windows PowerShell 使用：.venv\Scripts\Activate.ps1
-pip install -r requirements-dev.txt
-uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+以下命令在项目根目录执行一次即可。`environment.yml` 会创建独立 Python 环境并安装后端运行、测试依赖，Conda base 环境只用于管理环境。
+
+Windows 下将环境放到 D 盘（路径可自行更换）：
+
+```powershell
+conda env create --prefix D:/Programs/miniforge/envs/myflow --file environment.yml
 ```
 
-另一个终端启动前端：
+安装前端工具及锁定依赖：
 
-```sh
+```powershell
+nvm install 24.19.0
+nvm use 24 --local
 cd frontend
-corepack enable
+npm install --global pnpm@10.18.3
 pnpm install --frozen-lockfile
+```
+
+`nvm use 24 --local` 从本地已安装的 24.x 版本中选择最新版本，不读取在线版本列表。本项目已验证版本为 24.19.0。普通 `nvm use <版本>` 可能先联网解析版本，下载源不可达时会超时。
+
+前端 `.npmrc` 将 pnpm 包存储放到项目根目录 `.pnpm-store/`，该目录已被 Git 忽略。新安装 nvm 或修改 PATH 后，重开终端；若编辑器内仍找不到命令，请重启编辑器。
+
+### 日常启动
+
+终端一，从项目根目录激活环境并启动后端：
+
+```powershell
+conda activate D:/Programs/miniforge/envs/myflow
+cd backend
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+终端二，从项目根目录启动前端：
+
+```powershell
+cd frontend
 pnpm dev
+```
+
+每个新后端终端都需要激活 Conda；环境和依赖无需重新安装。Node 保持 24 为默认版本时无需再次切换；从其他版本切回时执行 `nvm use 24 --local`。本机 nvm 使用 link 模式，不会根据 `.nvmrc` 自动切换；shim 模式则支持自动识别。
+
+若 PowerShell 尚未初始化 Conda，可在 `backend/` 中直接启动，无需修改 PowerShell 配置：
+
+```powershell
+conda run --no-capture-output --prefix D:/Programs/miniforge/envs/myflow python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 前端将 `/api` 和 `/artifacts` 代理到 `http://127.0.0.1:8000`，无需配置 CORS。若改变后端地址，在启动前端前设置 `BACKEND_URL`；生产构建需在 `pnpm build` 前设置。
 
 后端 API 文档：[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)。本地开发默认数据目录是 `backend/data/`，可通过 `MYFLOW_DATA_DIR` 指定。
+
+### 一次性修复 nvm 目录
+
+若 `nvm list` 显示没有版本，但 `D:/Programs/nvm/installs/v24.19.0/node.exe` 确实存在，请在**报错的同一个终端**、项目根目录运行：
+
+```powershell
+.\scripts\repair-local-nvm.ps1
+```
+
+脚本先验证现有 Node 文件，再修正当前终端读取的 nvm 配置（版本目录、link 模式），并更新当前终端和用户 PATH；不会下载 Node 或修改 Conda 环境。默认版本目录为 `D:/Programs/nvm/installs`，命令通过 nvm 管理的 `D:/Programs/nvm/.link/nodejs` 链接访问所选版本。
+
+**修复成功后无需每次执行。** 重开其他终端或编辑器即可刷新 PATH。可通过脚本参数 `-VersionRoot`、`-Version` 指定其他安装目录和版本；脚本针对 nvm-windows 2.x。
+
+### 更新依赖与验证
+
+后端依赖变化时，在项目根目录更新已有环境；前端依赖变化时，在 `frontend/` 中重新运行 `pnpm install --frozen-lockfile`：
+
+```powershell
+conda env update --prefix D:/Programs/miniforge/envs/myflow --file environment.yml
+```
 
 ```sh
 # backend/（激活虚拟环境后）
@@ -92,6 +140,10 @@ pnpm test
 pnpm typecheck
 pnpm build
 ```
+
+### 不使用 Conda：venv 备选
+
+在 `backend/` 中运行 `python -m venv .venv`，激活后执行 `python -m pip install -r requirements-dev.txt`，再按上述方式启动后端。Windows PowerShell 激活命令为 `.venv\Scripts\Activate.ps1`，macOS/Linux 为 `source .venv/bin/activate`。前端工具和启动步骤相同。
 
 ## 当前边界
 
